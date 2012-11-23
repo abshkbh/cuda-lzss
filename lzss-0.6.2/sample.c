@@ -231,7 +231,9 @@ int main(int argc, char *argv[])
     /* we have valid parameters encode or decode */
     if (mode == ENCODE)
     {
+        printf("Before encoding\n");
         EncodeLZSSByFile(fpIn, fpOut);
+	printBuffer();
     }
     else
     {
