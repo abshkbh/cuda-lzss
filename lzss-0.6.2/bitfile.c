@@ -120,19 +120,6 @@ typedef union
     unsigned char bytes[sizeof(unsigned long)];
 } endian_test_t;
 
-
-
-
-/* Own output buffer definitions */
-#define LENGTH 256
-static unsigned char outputBuffer[LENGTH];
-static unsigned int outputBytes = 0;
-static const char *outFile = "/home/vm18648/Desktop/myout.txt";
-
-/* Routine for printing buffer */
-void printBuffer();
-void putInBuffer(unsigned char c);
-
 /***************************************************************************
 *                               PROTOTYPES
 ***************************************************************************/
@@ -314,7 +301,7 @@ int BitFileClose(bit_file_t *stream)
         if (stream->bitCount != 0)
         {
             (stream->bitBuffer) <<= 8 - (stream->bitCount);
-	    fputc(stream->bitBuffer, stream->fp);   /* handle error? */
+            fputc(stream->bitBuffer, stream->fp);   /* handle error? */
         }
     }
 
@@ -356,9 +343,7 @@ FILE *BitFileToFILE(bit_file_t *stream)
         if (stream->bitCount != 0)
         {
             (stream->bitBuffer) <<= 8 - (stream->bitCount);
-            
-	    putInBuffer(stream->bitBuffer);
-	    fputc(stream->bitBuffer, stream->fp);   /* handle error? */
+            fputc(stream->bitBuffer, stream->fp);   /* handle error? */
         }
     }
 
@@ -520,10 +505,6 @@ int BitFilePutChar(const int c, bit_file_t *stream)
 
     if (stream->bitCount == 0)
     {
-  
-        /* Printing to buffer */
-	putInBuffer(c);
-        
         /* we can just put byte from file */
         return fputc(c, stream->fp);
     }
@@ -532,55 +513,50 @@ int BitFilePutChar(const int c, bit_file_t *stream)
     tmp = ((unsigned char)c) >> (stream->bitCount);
     tmp = tmp | ((stream->bitBuffer) << (8 - stream->bitCount));
 
-
-    /* Printing to buffer */
-    putInBuffer(tmp);
-    /* We shud add stream->bitBuffer = c here */
-
     if (fputc(tmp, stream->fp) != EOF)
     {
-	/* put remaining in buffer. count shouldn't change. */
-	stream->bitBuffer = c;
+        /* put remaining in buffer. count shouldn't change. */
+        stream->bitBuffer = c;
     }
     else
     {
-	return EOF;
+        return EOF;
     }
 
     return tmp;
 }
 
 /***************************************************************************
- *   Function   : BitFileGetBit
- *   Description: This function returns the next bit from the file passed as
- *                a parameter.  The bit value returned is the msb in the
- *                bit buffer.
- *   Parameters : stream - pointer to bit file stream to read from
- *   Effects    : Reads next bit from bit buffer.  If the buffer is empty,
- *                a new byte will be read from the file.
- *   Returned   : 0 if bit == 0, 1 if bit == 1, and EOF if operation fails.
- ***************************************************************************/
+*   Function   : BitFileGetBit
+*   Description: This function returns the next bit from the file passed as
+*                a parameter.  The bit value returned is the msb in the
+*                bit buffer.
+*   Parameters : stream - pointer to bit file stream to read from
+*   Effects    : Reads next bit from bit buffer.  If the buffer is empty,
+*                a new byte will be read from the file.
+*   Returned   : 0 if bit == 0, 1 if bit == 1, and EOF if operation fails.
+***************************************************************************/
 int BitFileGetBit(bit_file_t *stream)
 {
     int returnValue;
 
     if (stream == NULL)
     {
-	return(EOF);
+        return(EOF);
     }
 
     if (stream->bitCount == 0)
     {
-	/* buffer is empty, read another character */
-	if ((returnValue = fgetc(stream->fp)) == EOF)
-	{
-	    return EOF;
-	}
-	else
-	{
-	    stream->bitCount = 8;
-	    stream->bitBuffer = returnValue;
-	}
+        /* buffer is empty, read another character */
+        if ((returnValue = fgetc(stream->fp)) == EOF)
+        {
+            return EOF;
+        }
+        else
+        {
+            stream->bitCount = 8;
+            stream->bitBuffer = returnValue;
+        }
     }
 
     /* bit to return is msb in buffer */
@@ -591,22 +567,22 @@ int BitFileGetBit(bit_file_t *stream)
 }
 
 /***************************************************************************
- *   Function   : BitFilePutBit
- *   Description: This function writes the bit passed as a parameter to the
- *                file passed a parameter.
- *   Parameters : c - the bit value to be written
- *                stream - pointer to bit file stream to write to
- *   Effects    : Writes a bit to the bit buffer.  If the buffer has a byte,
- *                the buffer is written to the file and cleared.
- *   Returned   : On success, the bit value written, otherwise EOF.
- ***************************************************************************/
+*   Function   : BitFilePutBit
+*   Description: This function writes the bit passed as a parameter to the
+*                file passed a parameter.
+*   Parameters : c - the bit value to be written
+*                stream - pointer to bit file stream to write to
+*   Effects    : Writes a bit to the bit buffer.  If the buffer has a byte,
+*                the buffer is written to the file and cleared.
+*   Returned   : On success, the bit value written, otherwise EOF.
+***************************************************************************/
 int BitFilePutBit(const int c, bit_file_t *stream)
 {
     int returnValue = c;
 
     if (stream == NULL)
     {
-	return(EOF);
+        return(EOF);
     }
 
     stream->bitCount++;
@@ -614,42 +590,39 @@ int BitFilePutBit(const int c, bit_file_t *stream)
 
     if (c != 0)
     {
-	stream->bitBuffer |= 1;
+        stream->bitBuffer |= 1;
     }
 
     /* write bit buffer if we have 8 bits */
     if (stream->bitCount == 8)
     {
-	/* Printing in buffer */
-	putInBuffer(stream->bitBuffer); 
+        if (fputc(stream->bitBuffer, stream->fp) == EOF)
+        {
+            returnValue = EOF;
+        }
 
-	if (fputc(stream->bitBuffer, stream->fp) == EOF)
-	{
-	    returnValue = EOF;
-	}
-
-	/* reset buffer */
-	stream->bitCount = 0;
-	stream->bitBuffer = 0;
+        /* reset buffer */
+        stream->bitCount = 0;
+        stream->bitBuffer = 0;
     }
 
     return returnValue;
 }
 
 /***************************************************************************
- *   Function   : BitFileGetBits
- *   Description: This function reads the specified number of bits from the
- *                file passed as a parameter and writes them to the
- *                requested memory location (msb to lsb).
- *   Parameters : stream - pointer to bit file stream to read from
- *                bits - address to store bits read
- *                count - number of bits to read
- *   Effects    : Reads bits from the bit buffer and file stream.  The bit
- *                buffer will be modified as necessary.
- *   Returned   : EOF for failure, otherwise the number of bits read.  If
- *                an EOF is reached before all the bits are read, bits
- *                will contain every bit through the last complete byte.
- ***************************************************************************/
+*   Function   : BitFileGetBits
+*   Description: This function reads the specified number of bits from the
+*                file passed as a parameter and writes them to the
+*                requested memory location (msb to lsb).
+*   Parameters : stream - pointer to bit file stream to read from
+*                bits - address to store bits read
+*                count - number of bits to read
+*   Effects    : Reads bits from the bit buffer and file stream.  The bit
+*                buffer will be modified as necessary.
+*   Returned   : EOF for failure, otherwise the number of bits read.  If
+*                an EOF is reached before all the bits are read, bits
+*                will contain every bit through the last complete byte.
+***************************************************************************/
 int BitFileGetBits(bit_file_t *stream, void *bits, const unsigned int count)
 {
     unsigned char *bytes, shifts;
@@ -659,7 +632,7 @@ int BitFileGetBits(bit_file_t *stream, void *bits, const unsigned int count)
 
     if ((stream == NULL) || (bits == NULL))
     {
-	return(EOF);
+        return(EOF);
     }
 
     offset = 0;
@@ -668,59 +641,59 @@ int BitFileGetBits(bit_file_t *stream, void *bits, const unsigned int count)
     /* read whole bytes */
     while (remaining >= 8)
     {
-	returnValue = BitFileGetChar(stream);
+        returnValue = BitFileGetChar(stream);
 
-	if (returnValue == EOF)
-	{
-	    return EOF;
-	}
+        if (returnValue == EOF)
+        {
+            return EOF;
+        }
 
-	bytes[offset] = (unsigned char)returnValue;
-	remaining -= 8;
-	offset++;
+        bytes[offset] = (unsigned char)returnValue;
+        remaining -= 8;
+        offset++;
     }
 
     if (remaining != 0)
     {
-	/* read remaining bits */
-	shifts = 8 - remaining;
-	bytes[offset] = 0;
+        /* read remaining bits */
+        shifts = 8 - remaining;
+        bytes[offset] = 0;
 
-	while (remaining > 0)
-	{
-	    returnValue = BitFileGetBit(stream);
+        while (remaining > 0)
+        {
+            returnValue = BitFileGetBit(stream);
 
-	    if (returnValue == EOF)
-	    {
-		return EOF;
-	    }
+            if (returnValue == EOF)
+            {
+                return EOF;
+            }
 
-	    bytes[offset] <<= 1;
-	    bytes[offset] |= (returnValue & 0x01);
-	    remaining--;
-	}
+            bytes[offset] <<= 1;
+            bytes[offset] |= (returnValue & 0x01);
+            remaining--;
+        }
 
-	/* shift last bits into position */
-	bytes[offset] <<= shifts;
+        /* shift last bits into position */
+        bytes[offset] <<= shifts;
     }
 
     return count;
 }
 
 /***************************************************************************
- *   Function   : BitFilePutBits
- *   Description: This function writes the specified number of bits from the
- *                memory location passed as a parameter to the file passed
- *                as a parameter.   Bits are written msb to lsb.
- *   Parameters : stream - pointer to bit file stream to write to
- *                bits - pointer to bits to write
- *                count - number of bits to write
- *   Effects    : Writes bits to the bit buffer and file stream.  The bit
- *                buffer will be modified as necessary.
- *   Returned   : EOF for failure, otherwise the number of bits written.  If
- *                an error occurs after a partial write, the partially
- *                written bits will not be unwritten.
- ***************************************************************************/
+*   Function   : BitFilePutBits
+*   Description: This function writes the specified number of bits from the
+*                memory location passed as a parameter to the file passed
+*                as a parameter.   Bits are written msb to lsb.
+*   Parameters : stream - pointer to bit file stream to write to
+*                bits - pointer to bits to write
+*                count - number of bits to write
+*   Effects    : Writes bits to the bit buffer and file stream.  The bit
+*                buffer will be modified as necessary.
+*   Returned   : EOF for failure, otherwise the number of bits written.  If
+*                an error occurs after a partial write, the partially
+*                written bits will not be unwritten.
+***************************************************************************/
 int BitFilePutBits(bit_file_t *stream, void *bits, const unsigned int count)
 {
     unsigned char *bytes, tmp;
@@ -730,7 +703,7 @@ int BitFilePutBits(bit_file_t *stream, void *bits, const unsigned int count)
 
     if ((stream == NULL) || (bits == NULL))
     {
-	return(EOF);
+        return(EOF);
     }
 
     offset = 0;
@@ -739,96 +712,96 @@ int BitFilePutBits(bit_file_t *stream, void *bits, const unsigned int count)
     /* write whole bytes */
     while (remaining >= 8)
     {
-	returnValue = BitFilePutChar(bytes[offset], stream);
+        returnValue = BitFilePutChar(bytes[offset], stream);
 
-	if (returnValue == EOF)
-	{
-	    return EOF;
-	}
+        if (returnValue == EOF)
+        {
+            return EOF;
+        }
 
-	remaining -= 8;
-	offset++;
+        remaining -= 8;
+        offset++;
     }
 
     if (remaining != 0)
     {
-	/* write remaining bits */
-	tmp = bytes[offset];
+        /* write remaining bits */
+        tmp = bytes[offset];
 
-	while (remaining > 0)
-	{
-	    returnValue = BitFilePutBit((tmp & 0x80), stream);
+        while (remaining > 0)
+        {
+            returnValue = BitFilePutBit((tmp & 0x80), stream);
 
-	    if (returnValue == EOF)
-	    {
-		return EOF;
-	    }
+            if (returnValue == EOF)
+            {
+                return EOF;
+            }
 
-	    tmp <<= 1;
-	    remaining--;
-	}
+            tmp <<= 1;
+            remaining--;
+        }
     }
 
     return count;
 }
 
 /***************************************************************************
- *   Function   : BitFileGetBitsInt
- *   Description: This function provides a machine independent layer that
- *                allows a single function call to stuff an arbitrary number
- *                of bits into an integer type variable.
- *   Parameters : stream - pointer to bit file stream to read from
- *                bits - address to store bits read
- *                count - number of bits to read
- *                size - sizeof type containing "bits"
- *   Effects    : Calls a function that reads bits from the bit buffer and
- *                file stream.  The bit buffer will be modified as necessary.
- *                the bits will be written to "bits" from least significant
- *                byte to most significant byte.
- *   Returned   : EOF for failure, otherwise the number of bits read by the
- *                called function.
- ***************************************************************************/
+*   Function   : BitFileGetBitsInt
+*   Description: This function provides a machine independent layer that
+*                allows a single function call to stuff an arbitrary number
+*                of bits into an integer type variable.
+*   Parameters : stream - pointer to bit file stream to read from
+*                bits - address to store bits read
+*                count - number of bits to read
+*                size - sizeof type containing "bits"
+*   Effects    : Calls a function that reads bits from the bit buffer and
+*                file stream.  The bit buffer will be modified as necessary.
+*                the bits will be written to "bits" from least significant
+*                byte to most significant byte.
+*   Returned   : EOF for failure, otherwise the number of bits read by the
+*                called function.
+***************************************************************************/
 int BitFileGetBitsInt(bit_file_t *stream, void *bits, const unsigned int count,
-	const size_t size)
+    const size_t size)
 {
     int returnValue;
 
     if ((stream == NULL) || (bits == NULL))
     {
-	return(EOF);
+        return(EOF);
     }
 
     if (stream->endian == BF_LITTLE_ENDIAN)
     {
-	returnValue = BitFileGetBitsLE(stream, bits, count);
+        returnValue = BitFileGetBitsLE(stream, bits, count);
     }
     else if (stream->endian == BF_BIG_ENDIAN)
     {
-	returnValue = BitFileGetBitsBE(stream, bits, count, size);
+        returnValue = BitFileGetBitsBE(stream, bits, count, size);
     }
     else
     {
-	returnValue = EOF;
+        returnValue = EOF;
     }
 
     return returnValue;
 }
 
 /***************************************************************************
- *   Function   : BitFileGetBitsLE   (Little Endian)
- *   Description: This function reads the specified number of bits from the
- *                file passed as a parameter and writes them to the
- *                requested memory location (LSB to MSB).
- *   Parameters : stream - pointer to bit file stream to read from
- *                bits - address to store bits read
- *                count - number of bits to read
- *   Effects    : Reads bits from the bit buffer and file stream.  The bit
- *                buffer will be modified as necessary.  bits is treated as
- *                a little endian integer of length >= (count/8) + 1.
- *   Returned   : EOF for failure, otherwise the number of bits read.  If
- *                an EOF is reached before all the bits are read, bits
- *                will contain every bit through the last successful read.
- ***************************************************************************/
+*   Function   : BitFileGetBitsLE   (Little Endian)
+*   Description: This function reads the specified number of bits from the
+*                file passed as a parameter and writes them to the
+*                requested memory location (LSB to MSB).
+*   Parameters : stream - pointer to bit file stream to read from
+*                bits - address to store bits read
+*                count - number of bits to read
+*   Effects    : Reads bits from the bit buffer and file stream.  The bit
+*                buffer will be modified as necessary.  bits is treated as
+*                a little endian integer of length >= (count/8) + 1.
+*   Returned   : EOF for failure, otherwise the number of bits read.  If
+*                an EOF is reached before all the bits are read, bits
+*                will contain every bit through the last successful read.
+***************************************************************************/
 int BitFileGetBitsLE(bit_file_t *stream, void *bits, const unsigned int count)
 {
     unsigned char *bytes;
@@ -842,34 +815,34 @@ int BitFileGetBitsLE(bit_file_t *stream, void *bits, const unsigned int count)
     /* read whole bytes */
     while (remaining >= 8)
     {
-	returnValue = BitFileGetChar(stream);
+        returnValue = BitFileGetChar(stream);
 
-	if (returnValue == EOF)
-	{
-	    return EOF;
-	}
+        if (returnValue == EOF)
+        {
+            return EOF;
+        }
 
-	bytes[offset] = (unsigned char)returnValue;
-	remaining -= 8;
-	offset++;
+        bytes[offset] = (unsigned char)returnValue;
+        remaining -= 8;
+        offset++;
     }
 
     if (remaining != 0)
     {
-	/* read remaining bits */
-	while (remaining > 0)
-	{
-	    returnValue = BitFileGetBit(stream);
+        /* read remaining bits */
+        while (remaining > 0)
+        {
+            returnValue = BitFileGetBit(stream);
 
-	    if (returnValue == EOF)
-	    {
-		return EOF;
-	    }
+            if (returnValue == EOF)
+            {
+                return EOF;
+            }
 
-	    bytes[offset] <<= 1;
-	    bytes[offset] |= (returnValue & 0x01);
-	    remaining--;
-	}
+            bytes[offset] <<= 1;
+            bytes[offset] |= (returnValue & 0x01);
+            remaining--;
+        }
 
     }
 
@@ -877,31 +850,31 @@ int BitFileGetBitsLE(bit_file_t *stream, void *bits, const unsigned int count)
 }
 
 /***************************************************************************
- *   Function   : BitFileGetBitsBE   (Big Endian)
- *   Description: This function reads the specified number of bits from the
- *                file passed as a parameter and writes them to the
- *                requested memory location (LSB to MSB).
- *   Parameters : stream - pointer to bit file stream to read from
- *                bits - address to store bits read
- *                count - number of bits to read
- *                size - sizeof type containing "bits"
- *   Effects    : Reads bits from the bit buffer and file stream.  The bit
- *                buffer will be modified as necessary.  bits is treated as
- *                a big endian integer of length size.
- *   Returned   : EOF for failure, otherwise the number of bits read.  If
- *                an EOF is reached before all the bits are read, bits
- *                will contain every bit through the last successful read.
- ***************************************************************************/
+*   Function   : BitFileGetBitsBE   (Big Endian)
+*   Description: This function reads the specified number of bits from the
+*                file passed as a parameter and writes them to the
+*                requested memory location (LSB to MSB).
+*   Parameters : stream - pointer to bit file stream to read from
+*                bits - address to store bits read
+*                count - number of bits to read
+*                size - sizeof type containing "bits"
+*   Effects    : Reads bits from the bit buffer and file stream.  The bit
+*                buffer will be modified as necessary.  bits is treated as
+*                a big endian integer of length size.
+*   Returned   : EOF for failure, otherwise the number of bits read.  If
+*                an EOF is reached before all the bits are read, bits
+*                will contain every bit through the last successful read.
+***************************************************************************/
 int BitFileGetBitsBE(bit_file_t *stream, void *bits, const unsigned int count,
-	const size_t size)
+    const size_t size)
 {
     unsigned char *bytes;
     int offset, remaining, returnValue;
 
     if (count > (size * 8))
     {
-	/* too many bits to read */
-	return EOF;
+        /* too many bits to read */
+        return EOF;
     }
 
     bytes = (unsigned char *)bits;
@@ -912,34 +885,34 @@ int BitFileGetBitsBE(bit_file_t *stream, void *bits, const unsigned int count,
     /* read whole bytes */
     while (remaining >= 8)
     {
-	returnValue = BitFileGetChar(stream);
+        returnValue = BitFileGetChar(stream);
 
-	if (returnValue == EOF)
-	{
-	    return EOF;
-	}
+        if (returnValue == EOF)
+        {
+            return EOF;
+        }
 
-	bytes[offset] = (unsigned char)returnValue;
-	remaining -= 8;
-	offset--;
+        bytes[offset] = (unsigned char)returnValue;
+        remaining -= 8;
+        offset--;
     }
 
     if (remaining != 0)
     {
-	/* read remaining bits */
-	while (remaining > 0)
-	{
-	    returnValue = BitFileGetBit(stream);
+        /* read remaining bits */
+        while (remaining > 0)
+        {
+            returnValue = BitFileGetBit(stream);
 
-	    if (returnValue == EOF)
-	    {
-		return EOF;
-	    }
+            if (returnValue == EOF)
+            {
+                return EOF;
+            }
 
-	    bytes[offset] <<= 1;
-	    bytes[offset] |= (returnValue & 0x01);
-	    remaining--;
-	}
+            bytes[offset] <<= 1;
+            bytes[offset] |= (returnValue & 0x01);
+            remaining--;
+        }
 
     }
 
@@ -947,63 +920,63 @@ int BitFileGetBitsBE(bit_file_t *stream, void *bits, const unsigned int count,
 }
 
 /***************************************************************************
- *   Function   : BitFilePutBitsInt
- *   Description: This function provides a machine independent layer that
- *                allows a single function call to write an arbitrary number
- *                of bits from an integer type variable into a file.
- *   Parameters : stream - pointer to bit file stream to write to
- *                bits - pointer to bits to write
- *                count - number of bits to write
- *                size - sizeof type containing "bits"
- *   Effects    : Calls a function that writes bits to the bit buffer and
- *                file stream.  The bit buffer will be modified as necessary.
- *                the bits will be written to the file stream from least
- *                significant byte to most significant byte.
- *   Returned   : EOF for failure, otherwise the number of bits written.  If
- *                an error occurs after a partial write, the partially
- *                written bits will not be unwritten.
- ***************************************************************************/
+*   Function   : BitFilePutBitsInt
+*   Description: This function provides a machine independent layer that
+*                allows a single function call to write an arbitrary number
+*                of bits from an integer type variable into a file.
+*   Parameters : stream - pointer to bit file stream to write to
+*                bits - pointer to bits to write
+*                count - number of bits to write
+*                size - sizeof type containing "bits"
+*   Effects    : Calls a function that writes bits to the bit buffer and
+*                file stream.  The bit buffer will be modified as necessary.
+*                the bits will be written to the file stream from least
+*                significant byte to most significant byte.
+*   Returned   : EOF for failure, otherwise the number of bits written.  If
+*                an error occurs after a partial write, the partially
+*                written bits will not be unwritten.
+***************************************************************************/
 int BitFilePutBitsInt(bit_file_t *stream, void *bits, const unsigned int count,
-	const size_t size)
+    const size_t size)
 {
     int returnValue;
 
     if ((stream == NULL) || (bits == NULL))
     {
-	return(EOF);
+        return(EOF);
     }
 
     if (stream->endian == BF_LITTLE_ENDIAN)
     {
-	returnValue = BitFilePutBitsLE(stream, bits, count);
+        returnValue = BitFilePutBitsLE(stream, bits, count);
     }
     else if (stream->endian == BF_BIG_ENDIAN)
     {
-	returnValue = BitFilePutBitsBE(stream, bits, count, size);
+        returnValue = BitFilePutBitsBE(stream, bits, count, size);
     }
     else
     {
-	returnValue = EOF;
+        returnValue = EOF;
     }
 
     return returnValue;
 }
 
 /***************************************************************************
- *   Function   : BitFilePutBitsLE   (Little Endian)
- *   Description: This function writes the specified number of bits from the
- *                memory location passed as a parameter to the file passed
- *                as a parameter.   Bits are written LSB to MSB.
- *   Parameters : stream - pointer to bit file stream to write to
- *                bits - pointer to bits to write
- *                count - number of bits to write
- *   Effects    : Writes bits to the bit buffer and file stream.  The bit
- *                buffer will be modified as necessary.  bits is treated as
- *                a little endian integer of length >= (count/8) + 1.
- *   Returned   : EOF for failure, otherwise the number of bits written.  If
- *                an error occurs after a partial write, the partially
- *                written bits will not be unwritten.
- ***************************************************************************/
+*   Function   : BitFilePutBitsLE   (Little Endian)
+*   Description: This function writes the specified number of bits from the
+*                memory location passed as a parameter to the file passed
+*                as a parameter.   Bits are written LSB to MSB.
+*   Parameters : stream - pointer to bit file stream to write to
+*                bits - pointer to bits to write
+*                count - number of bits to write
+*   Effects    : Writes bits to the bit buffer and file stream.  The bit
+*                buffer will be modified as necessary.  bits is treated as
+*                a little endian integer of length >= (count/8) + 1.
+*   Returned   : EOF for failure, otherwise the number of bits written.  If
+*                an error occurs after a partial write, the partially
+*                written bits will not be unwritten.
+***************************************************************************/
 int BitFilePutBitsLE(bit_file_t *stream, void *bits, const unsigned int count)
 {
     unsigned char *bytes, tmp;
@@ -1016,65 +989,65 @@ int BitFilePutBitsLE(bit_file_t *stream, void *bits, const unsigned int count)
     /* write whole bytes */
     while (remaining >= 8)
     {
-	returnValue = BitFilePutChar(bytes[offset], stream);
+        returnValue = BitFilePutChar(bytes[offset], stream);
 
-	if (returnValue == EOF)
-	{
-	    return EOF;
-	}
+        if (returnValue == EOF)
+        {
+            return EOF;
+        }
 
-	remaining -= 8;
-	offset++;
+        remaining -= 8;
+        offset++;
     }
 
     if (remaining != 0)
     {
-	/* write remaining bits */
-	tmp = bytes[offset];
-	tmp <<= (8 - remaining);
+        /* write remaining bits */
+        tmp = bytes[offset];
+        tmp <<= (8 - remaining);
 
-	while (remaining > 0)
-	{
-	    returnValue = BitFilePutBit((tmp & 0x80), stream);
+        while (remaining > 0)
+        {
+            returnValue = BitFilePutBit((tmp & 0x80), stream);
 
-	    if (returnValue == EOF)
-	    {
-		return EOF;
-	    }
+            if (returnValue == EOF)
+            {
+                return EOF;
+            }
 
-	    tmp <<= 1;
-	    remaining--;
-	}
+            tmp <<= 1;
+            remaining--;
+        }
     }
 
     return count;
 }
 
 /***************************************************************************
- *   Function   : BitFilePutBitsBE   (Big Endian)
- *   Description: This function writes the specified number of bits from the
- *                memory location passed as a parameter to the file passed
- *                as a parameter.   Bits are written LSB to MSB.
- *   Parameters : stream - pointer to bit file stream to write to
- *                bits - pointer to bits to write
- *                count - number of bits to write
- *   Effects    : Writes bits to the bit buffer and file stream.  The bit
- *                buffer will be modified as necessary.  bits is treated as
- *                a big endian integer of length size.
- *   Returned   : EOF for failure, otherwise the number of bits written.  If
- *                an error occurs after a partial write, the partially
- *                written bits will not be unwritten.
- ***************************************************************************/
+*   Function   : BitFilePutBitsBE   (Big Endian)
+*   Description: This function writes the specified number of bits from the
+*                memory location passed as a parameter to the file passed
+*                as a parameter.   Bits are written LSB to MSB.
+*   Parameters : stream - pointer to bit file stream to write to
+*                bits - pointer to bits to write
+*                count - number of bits to write
+*   Effects    : Writes bits to the bit buffer and file stream.  The bit
+*                buffer will be modified as necessary.  bits is treated as
+*                a big endian integer of length size.
+*   Returned   : EOF for failure, otherwise the number of bits written.  If
+*                an error occurs after a partial write, the partially
+*                written bits will not be unwritten.
+***************************************************************************/
 int BitFilePutBitsBE(bit_file_t *stream, void *bits, const unsigned int count,
-	const size_t size)
+    const size_t size)
 {
     unsigned char *bytes, tmp;
     int offset, remaining, returnValue;
 
     if (count > (size * 8))
     {
-	/* too many bits to write */
-	return EOF;
+        /* too many bits to write */
+        return EOF;
     }
 
     bytes = (unsigned char *)bits;
@@ -1084,65 +1057,36 @@ int BitFilePutBitsBE(bit_file_t *stream, void *bits, const unsigned int count,
     /* write whole bytes */
     while (remaining >= 8)
     {
-	returnValue = BitFilePutChar(bytes[offset], stream);
+        returnValue = BitFilePutChar(bytes[offset], stream);
 
-	if (returnValue == EOF)
-	{
-	    return EOF;
-	}
+        if (returnValue == EOF)
+        {
+            return EOF;
+        }
 
-	remaining -= 8;
-	offset--;
+        remaining -= 8;
+        offset--;
     }
 
     if (remaining != 0)
     {
-	/* write remaining bits */
-	tmp = bytes[offset];
-	tmp <<= (8 - remaining);
+        /* write remaining bits */
+        tmp = bytes[offset];
+        tmp <<= (8 - remaining);
 
-	while (remaining > 0)
-	{
-	    returnValue = BitFilePutBit((tmp & 0x80), stream);
+        while (remaining > 0)
+        {
+            returnValue = BitFilePutBit((tmp & 0x80), stream);
 
-	    if (returnValue == EOF)
-	    {
-		return EOF;
-	    }
+            if (returnValue == EOF)
+            {
+                return EOF;
+            }
 
-	    tmp <<= 1;
-	    remaining--;
-	}
+            tmp <<= 1;
+            remaining--;
+        }
     }
 
     return count;
-}
-
-/* Printing our output buffer */
-void putInBuffer(unsigned char c) {
-
-    outputBuffer[outputBytes] = c;
-    outputBytes++;
-
-}
-
-
-
-
-
-/* Printing our output buffer */
-void printBuffer() {
-    int i;
-    FILE *fp = NULL;
-    if((fp = fopen(outFile,"wb")) == NULL) {
-	printf("Couldn't open file. Will not print buffer\n");
-    }
-    printf("Printing Buffer\n");
-    for ( i = 0 ; i < outputBytes ; i++){
-	/* fprintf(fp,"%c",outputBuffer[i]); */
-	fputc(outputBuffer[i],fp);
-	printf("%c",outputBuffer[i]);
-    }
-
-    fclose(fp);
 }

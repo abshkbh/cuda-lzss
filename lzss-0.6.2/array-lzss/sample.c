@@ -111,13 +111,17 @@ int main(int argc, char *argv[])
     FILE *fpIn, *fpOut;      /* pointer to open input & output files */
     MODES mode;
 
+    char input[] = "This is a dummy string.Hello hey hey hey heye hye";
+    int input_len = strlen(input);
+    char *output = (char *)malloc(sizeof(char) * (input_len + 1));
+
     /* initialize data */
     fpIn = NULL;
     fpOut = NULL;
     mode = ENCODE;
 
     /* parse command line */
-    optList = GetOptList(argc, argv, "cdi:o:h?");
+    optList = GetOptList(argc, argv, "c:h?");
     thisOpt = optList;
 
     while (thisOpt != NULL)
@@ -126,72 +130,6 @@ int main(int argc, char *argv[])
         {
             case 'c':       /* compression mode */
                 mode = ENCODE;
-                break;
-
-            case 'd':       /* decompression mode */
-                mode = DECODE;
-                break;
-
-            case 'i':       /* input file name */
-                if (fpIn != NULL)
-                {
-                    fprintf(stderr, "Multiple input files not allowed.\n");
-                    fclose(fpIn);
-
-                    if (fpOut != NULL)
-                    {
-                        fclose(fpOut);
-                    }
-
-                    FreeOptList(optList);
-                    exit(EXIT_FAILURE);
-                }
-
-                /* open input file as binary */
-                fpIn = fopen(thisOpt->argument, "rb");
-                if (fpIn == NULL)
-                {
-                    perror("Opening input file");
-
-                    if (fpOut != NULL)
-                    {
-                        fclose(fpOut);
-                    }
-
-                    FreeOptList(optList);
-                    exit(EXIT_FAILURE);
-                }
-                break;
-
-            case 'o':       /* output file name */
-                if (fpOut != NULL)
-                {
-                    fprintf(stderr, "Multiple output files not allowed.\n");
-                    fclose(fpOut);
-
-                    if (fpIn != NULL)
-                    {
-                        fclose(fpIn);
-                    }
-
-                    FreeOptList(optList);
-                    exit(EXIT_FAILURE);
-                }
-
-                /* open output file as binary */
-                fpOut = fopen(thisOpt->argument, "wb");
-                if (fpOut == NULL)
-                {
-                    perror("Opening output file");
-
-                    if (fpIn != NULL)
-                    {
-                        fclose(fpIn);
-                    }
-
-                    FreeOptList(optList);
-                    exit(EXIT_FAILURE);
-                }
                 break;
 
             case 'h':
@@ -216,32 +154,14 @@ int main(int argc, char *argv[])
     }
 
 
-    /* use stdin/out if no files are provided */
-    if (fpIn == NULL)
-    {
-        fpIn = stdin;
-    }
-
-
-    if (fpOut == NULL)
-    {
-        fpOut = stdout;
-    }
 
     /* we have valid parameters encode or decode */
     if (mode == ENCODE)
     {
         printf("Before encoding\n");
-        EncodeLZSSByFile(fpIn, fpOut);
-    }
-    else
-    {
-        DecodeLZSSByFile(fpIn, fpOut);
+        EncodeLZSSByArray(input, output);
     }
 
-    /* remember to close files */
-    fclose(fpIn);
-    fclose(fpOut);
     return EXIT_SUCCESS;
 }
 

@@ -125,8 +125,10 @@ extern unsigned char uncodedLookahead[];
 *                closed after exit.
 *   Returned   : EXIT_SUCCESS or EXIT_FAILURE
 ****************************************************************************/
-int EncodeLZSSByFile(FILE *fpIn, FILE *fpOut)
+int EncodeLZSSByArray(char *input, char *output)
 {
+    int count ;
+    int input_len = strlen(input);
     bit_file_t *bfpOut;
 
     encoded_string_t matchData;
@@ -136,22 +138,6 @@ int EncodeLZSSByFile(FILE *fpIn, FILE *fpOut)
     /* head of sliding window and lookahead */
     unsigned int windowHead, uncodedHead;
 
-    /* use stdin if no input file */
-    if (fpIn == NULL)
-    {
-        fpIn = stdin;
-    }
-
-    if (fpOut == NULL)
-    {
-        /* use stdout if no output file */
-        bfpOut = MakeBitFile(stdout, BF_WRITE);
-    }
-    else
-    {
-        /* convert output file to bitfile */
-        bfpOut = MakeBitFile(fpOut, BF_WRITE);
-    }
 
     windowHead = 0;
     uncodedHead = 0;
@@ -164,138 +150,99 @@ int EncodeLZSSByFile(FILE *fpIn, FILE *fpOut)
     ************************************************************************/
     memset(slidingWindow, ' ', WINDOW_SIZE * sizeof(unsigned char));
 
+    bfpOut = BitStreamOpen(output);
+
+    count = 0;
     /* MAX_CODED : 2 to 17 because we cant have 0 to 1 */
     /************************************************************************
-    * Copy MAX_CODED bytes from the input file into the uncoded lookahead
-    * buffer.
-    ************************************************************************/
-    for (len = 0; len < MAX_CODED && (c = getc(fpIn)) != EOF; len++)
+     * Copy MAX_CODED bytes from the input file into the uncoded lookahead
+     * buffer.
+     ************************************************************************/
+    for (len = 0; len < MAX_CODED && (count < input_len); len++)
     {
-        uncodedLookahead[len] = c;
+	c = input[count];
+	uncodedLookahead[len] = c;
+	count++;
     }
 
     if (len == 0)
     {
-        return (EXIT_SUCCESS);   /* inFile was empty */
+	return (EXIT_SUCCESS);   /* inFile was empty */
     }
 
     /* Look for matching string in sliding window */
-    InitializeSearchStructures();
+/*    InitializeSearchStructures(); Not needed for bruteforce */
     matchData = FindMatch(windowHead, uncodedHead);
 
     /* now encoded the rest of the file until an EOF is read */
     while (len > 0)
     {
-        if (matchData.length > len)
-        {
-            /* garbage beyond last data happened to extend match length */
-            matchData.length = len;
-        }
+	if (matchData.length > len)
+	{
+	    /* garbage beyond last data happened to extend match length */
+	    matchData.length = len;
+	}
 
-        if (matchData.length <= MAX_UNCODED)
-        {
-            /* not long enough match.  write uncoded flag and character */
-            BitFilePutBit(UNCODED, bfpOut);
-            BitFilePutChar(uncodedLookahead[uncodedHead], bfpOut);
+	if (matchData.length <= MAX_UNCODED)
+	{
+	    /* not long enough match.  write uncoded flag and character */
+	    BitFilePutBit(UNCODED, bfpOut);
+	    BitFilePutChar(uncodedLookahead[uncodedHead], bfpOut);
 
-            matchData.length = 1;   /* set to 1 for 1 byte uncoded */
-        }
-        else
-        {
-            unsigned int adjustedLen;
+	    matchData.length = 1;   /* set to 1 for 1 byte uncoded */
+	}
+	else
+	{
+	    unsigned int adjustedLen;
 
-            /* adjust the length of the match so minimun encoded len is 0*/
-            adjustedLen = matchData.length - (MAX_UNCODED + 1);
+	    /* adjust the length of the match so minimun encoded len is 0*/
+	    adjustedLen = matchData.length - (MAX_UNCODED + 1);
 
-            /* match length > MAX_UNCODED.  Encode as offset and length. */
-            BitFilePutBit(ENCODED, bfpOut);
-            BitFilePutBitsInt(bfpOut, &matchData.offset, OFFSET_BITS,
-                sizeof(unsigned int));
-            BitFilePutBitsInt(bfpOut, &adjustedLen, LENGTH_BITS,
-                sizeof(unsigned int));
-        }
+	    /* match length > MAX_UNCODED.  Encode as offset and length. */
+	    BitFilePutBit(ENCODED, bfpOut);
+	    BitFilePutBitsInt(bfpOut, &matchData.offset, OFFSET_BITS,
+		    sizeof(unsigned int));
+	    BitFilePutBitsInt(bfpOut, &adjustedLen, LENGTH_BITS,
+		    sizeof(unsigned int));
+	}
 
-        /********************************************************************
-        * Replace the matchData.length worth of bytes we've matched in the
-        * sliding window with new bytes from the input file.
-        ********************************************************************/
-        i = 0;
-        while ((i < matchData.length) && ((c = getc(fpIn)) != EOF))
-        {
-            /* add old byte into sliding window and new into lookahead */
-            ReplaceChar(windowHead, uncodedLookahead[uncodedHead]);
-            uncodedLookahead[uncodedHead] = c;
-            windowHead = Wrap((windowHead + 1), WINDOW_SIZE);
-            uncodedHead = Wrap((uncodedHead + 1), MAX_CODED);
-            i++;
-        }
+	/********************************************************************
+	 * Replace the matchData.length worth of bytes we've matched in the
+	 * sliding window with new bytes from the input file.
+	 ********************************************************************/
+	i = 0;
+	while ((i < matchData.length) && (count < input_len))
+	{
+	    c = input[count];
+	    /* add old byte into sliding window and new into lookahead */
+	    ReplaceChar(windowHead, uncodedLookahead[uncodedHead]);
+	    uncodedLookahead[uncodedHead] = c;
+	    windowHead = Wrap((windowHead + 1), WINDOW_SIZE);
+	    uncodedHead = Wrap((uncodedHead + 1), MAX_CODED);
+	    i++;
+	    count++;
+	}
 
-        /* handle case where we hit EOF before filling lookahead */
-        while (i < matchData.length)
-        {
-            ReplaceChar(windowHead, uncodedLookahead[uncodedHead]);
-            /* nothing to add to lookahead here */
-            windowHead = Wrap((windowHead + 1), WINDOW_SIZE);
-            uncodedHead = Wrap((uncodedHead + 1), MAX_CODED);
-            len--;
-            i++;
-        }
+	/* handle case where we hit EOF before filling lookahead */
+	while (i < matchData.length)
+	{
+	    ReplaceChar(windowHead, uncodedLookahead[uncodedHead]);
+	    /* nothing to add to lookahead here */
+	    windowHead = Wrap((windowHead + 1), WINDOW_SIZE);
+	    uncodedHead = Wrap((uncodedHead + 1), MAX_CODED);
+	    len--;
+	    i++;
+	}
 
-        /* find match for the remaining characters */
-        matchData = FindMatch(windowHead, uncodedHead);
+	/* find match for the remaining characters */
+	matchData = FindMatch(windowHead, uncodedHead);
     }
 
-    /* we've decoded everything, free bitfile structure */
-    BitFileToFILE(bfpOut);
+    printf("Before writing to file\n");
+    /* we've decoded everything, now copy back buffer */
+    printBufferStream(bfpOut);
 
-   return (EXIT_SUCCESS);
+    FreeBitStream(bfpOut);
+    return (EXIT_SUCCESS);
 }
 
-/****************************************************************************
-*   Function   : EncodeLZSSByName
-*   Description: This function is provided to maintain compatibility with
-*                older versions of my LZSS implementation which used file
-*                names instead of file pointers.
-*   Parameters : inFile - name of file to encode
-*                outFile - name of file to write encoded output
-*   Effects    : inFile is encoded and written to outFile
-*   Returned   : EXIT_SUCCESS or EXIT_FAILURE
-****************************************************************************/
-int EncodeLZSSByName(char *inFile, char *outFile)
-{
-    FILE *fpIn, *fpOut;
-    int returnValue;
-
-    /* open binary input and output files */
-    if (inFile == NULL)
-    {
-        fpIn = stdin;
-    }
-    if ((fpIn = fopen(inFile, "rb")) == NULL)
-    {
-        perror(inFile);
-        return (EXIT_FAILURE);
-    }
-
-    if (outFile == NULL)
-    {
-        fpOut = stdout;
-    }
-    else
-    {
-        if ((fpOut = fopen(outFile, "wb")) == NULL)
-        {
-            fclose(fpIn);
-            perror(outFile);
-            return (EXIT_FAILURE);
-        }
-    }
-
-    returnValue = EncodeLZSSByFile(fpIn, fpOut);
-
-    /* close files */
-    fclose(fpIn);
-    fclose(fpOut);
-
-    return (returnValue);
-}
