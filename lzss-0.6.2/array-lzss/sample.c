@@ -77,22 +77,6 @@ typedef enum
     DECODE
 } MODES;
 
-/***************************************************************************
-*                                CONSTANTS
-***************************************************************************/
-char *RemovePath(char *fullPath);
-
-/***************************************************************************
-*                            GLOBAL VARIABLES
-***************************************************************************/
-
-/***************************************************************************
-*                               PROTOTYPES
-***************************************************************************/
-
-/***************************************************************************
-*                                FUNCTIONS
-***************************************************************************/
 
 /****************************************************************************
 *   Function   : main
@@ -134,16 +118,12 @@ int main(int argc, char *argv[])
 
             case 'h':
             case '?':
-                printf("Usage: %s <options>\n\n", RemovePath(argv[0]));
                 printf("options:\n");
                 printf("  -c : Encode input file to output file.\n");
                 printf("  -d : Decode input file to output file.\n");
                 printf("  -i <filename> : Name of input file.\n");
                 printf("  -o <filename> : Name of output file.\n");
                 printf("  -h | ?  : Print out command line options.\n\n");
-                printf("Default: %s -c -i stdin -o stdout\n",
-                    RemovePath(argv[0]));
-
                 FreeOptList(optList);
                 return(EXIT_SUCCESS);
         }
@@ -163,37 +143,4 @@ int main(int argc, char *argv[])
     }
 
     return EXIT_SUCCESS;
-}
-
-/***************************************************************************
-*   Function   : RemovePath
-*   Description: This is function accepts a pointer to the name of a file
-*                along with path information and returns a pointer to the
-*                character that is not part of the path.
-*   Parameters : fullPath - pointer to an array of characters containing
-*                           a file name and possible path modifiers.
-*   Effects    : None
-*   Returned   : Returns a pointer to the first character after any path
-*                information.
-***************************************************************************/
-char *RemovePath(char *fullPath)
-{
-    int i;
-    char *start, *tmp;                          /* start of file name */
-    const char delim[3] = {'\\', '/', ':'};     /* path deliminators */
-
-    start = fullPath;
-
-    /* find the first character after all file path delimiters */
-    for (i = 0; i < 3; i++)
-    {
-        tmp = strrchr(start, delim[i]);
-
-        if (tmp != NULL)
-        {
-            start = tmp + 1;
-        }
-    }
-
-    return start;
 }

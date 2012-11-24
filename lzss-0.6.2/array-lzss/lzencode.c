@@ -128,7 +128,7 @@ extern unsigned char uncodedLookahead[];
 int EncodeLZSSByArray(char *input, char *output)
 {
     int count ;
-    int input_len = strlen(input);
+    int input_len = strlen((char *)input);
     bit_file_t *bfpOut;
 
     encoded_string_t matchData;
