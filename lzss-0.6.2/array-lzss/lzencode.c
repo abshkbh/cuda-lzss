@@ -150,7 +150,7 @@ int EncodeLZSSByArray(char *input, char *output)
     ************************************************************************/
     memset(slidingWindow, ' ', WINDOW_SIZE * sizeof(unsigned char));
 
-    bfpOut = BitStreamOpen(output);
+    bfpOut = BitStreamOpen((unsigned char *)output);
 
     count = 0;
     /* MAX_CODED : 2 to 17 because we cant have 0 to 1 */
