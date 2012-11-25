@@ -158,7 +158,7 @@ int EncodeLZSSByArray(char *input, char *output)
      * Copy MAX_CODED bytes from the input file into the uncoded lookahead
      * buffer.
      ************************************************************************/
-    for (len = 0; len < MAX_CODED && (count < input_len); len++)
+    for (len = 0; len < MAX_CODED && (count < input_len ); len++)
     {
 	c = input[count];
 	uncodedLookahead[len] = c;
@@ -211,7 +211,8 @@ int EncodeLZSSByArray(char *input, char *output)
 	 * sliding window with new bytes from the input file.
 	 ********************************************************************/
 	i = 0;
-	while ((i < matchData.length) && (count < input_len))
+	while ((i < matchData.length) && (count < (input_len + 1))) //I changed input_len to input_len + 1 here to fix bug where last byte wasnt encoded 
+	                                                           // still need to figure why this is happening
 	{
 	    c = input[count];
 	    /* add old byte into sliding window and new into lookahead */

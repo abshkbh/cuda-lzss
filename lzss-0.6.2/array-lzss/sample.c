@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
     FILE *fpIn, *fpOut;      /* pointer to open input & output files */
     MODES mode;
 
-    char input[] = "This is a dummy string.Hello hey hey hey heye hye";
+    char input[] = "Chan";
     int input_len = strlen(input);
     char *output = (char *)malloc(sizeof(char) * (input_len + 1));
 
