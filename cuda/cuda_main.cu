@@ -42,26 +42,53 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>     /* strlen() */
-
+#include <unistd.h>     /* getopt */
 
 void encode(char *input, int length, char *output);
+int arguementParsing(int argc, char **argv, char *inputFile);
 
 
 /*---< main() >-------------------------------------------------------------*/
 int main(int argc, char **argv) {
 
-
+    char *inputFile;
     char input[] ="This is him he";
     int input_len = strlen(input);
     char *output = (char *)malloc(sizeof(char) * (input_len + 1));
 
+    arguementParsing(argc, argv, inputFile);
 
     printf("Before encoding\n");
     encode(input,input_len,output);
     printf("After encoding\n");
 
     //We should have compressed output in outptu buffer now
-return 0;
+    return 0;
 
 }
 
+    int
+arguementParsing(int argc,
+        char **argv,
+        char *inputFile)
+{
+    int is_file = 0;
+    char c;
+    while( (c = getopt(argc, argv, "f:")) != -1) {
+        switch(c) {
+            case 'f':
+                strcpy (inputFile, optarg);
+                is_file = 1;
+                break;
+            default:
+                printf("Usage ./main -f FILENAME\n");
+                exit(1);
+        }
+    }
+
+    if((is_file == 0)){
+        printf("Usage ./main -f FILENAME\n");
+        exit(1);
+    }
+    return 1;
+}
