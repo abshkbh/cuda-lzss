@@ -44,14 +44,14 @@
 #include <string.h>     /* strlen() */
 
 
-void encode(char *input, int length, char *output)
+void encode(char *input, int length, char *output);
 
 
 /*---< main() >-------------------------------------------------------------*/
 int main(int argc, char **argv) {
 
 
-    char input[] = "This is a dummy string.Hello hey hey hey heye hye";
+    char input[] ="This is him he";
     int input_len = strlen(input);
     char *output = (char *)malloc(sizeof(char) * (input_len + 1));
 
