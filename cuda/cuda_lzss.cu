@@ -578,7 +578,7 @@ void putInBufferStream(unsigned char c,bit_file_t * stream) {
 				 * sliding window with new bytes from the input file.
 				 ********************************************************************/
 				i = 0;
-				while ((i < matchData.length) && (count < input_len))
+				while ((i < matchData.length) && (count < (input_len + 1)))
 				{
 					c = input[count];
 					/* add old byte into sliding window and new into lookahead */
