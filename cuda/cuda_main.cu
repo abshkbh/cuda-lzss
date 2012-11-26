@@ -95,7 +95,7 @@ int readFile(char *inputFileName, int *inputSize, char **inputArr ) {
     for (i = 0; (c = getc(fp)) != EOF; i++ ) {
         (*inputArr)[i] = c;
     } 
-    inputArr[i] = '\0';    
+    (*inputArr)[i] = '\0';    
 
 
     return 0;
