@@ -43,20 +43,27 @@
 #include <stdlib.h>
 #include <string.h>     /* strlen() */
 #include <unistd.h>     /* getopt */
+#include <sys/stat.h>
 
 void encode(char *input, int length, char *output);
-int arguementParsing(int argc, char **argv, char *inputFile);
-
+int parseArguement(int argc, char **argv, char *inputFileName);
+int readFile(char *inputFileName, int *inputSize, char **inputArr);
 
 /*---< main() >-------------------------------------------------------------*/
 int main(int argc, char **argv) {
 
-    char *inputFile;
+    // Assuming user won't use file name longer than 64 char
+    char inputFileName[64];
+    int inputSize = 0;
+    char *inputArr;
+    int i;
+
     char input[] ="This is him he";
     int input_len = strlen(input);
     char *output = (char *)malloc(sizeof(char) * (input_len + 1));
 
-    arguementParsing(argc, argv, inputFile);
+    parseArguement(argc, argv, inputFileName);
+    readFile(inputFileName, &inputSize, &inputArr);
 
     printf("Before encoding\n");
     encode(input,input_len,output);
@@ -67,17 +74,40 @@ int main(int argc, char **argv) {
 
 }
 
-    int
-arguementParsing(int argc,
-        char **argv,
-        char *inputFile)
-{
+
+int readFile(char *inputFileName, int *inputSize, char **inputArr ) {
+    struct stat st;
+    int i;
+    char c;
+    FILE *fp;
+    stat(inputFileName, &st);
+    *inputSize = st.st_size;
+    //printf("size of the input file, %s: %d\n", inputFileName, inputSize);
+    // Open file and handle error
+    fp = fopen(inputFileName, "rb");
+    if (fp == NULL){
+        fprintf(stderr, "Cannot open file: %s\n", inputFileName);
+        exit (-1);
+    }
+    // Allocate appropriate amount of char array and copy from file.
+    //TODO: cuda malloc?
+    *inputArr = (char *)malloc(*inputSize + 1);
+    for (i = 0; (c = getc(fp)) != EOF; i++ ) {
+        (*inputArr)[i] = c;
+    } 
+    inputArr[i] = '\0';    
+
+
+    return 0;
+}
+
+int parseArguement(int argc, char **argv, char *inputFileName) {
     int is_file = 0;
     char c;
     while( (c = getopt(argc, argv, "f:")) != -1) {
         switch(c) {
             case 'f':
-                strcpy (inputFile, optarg);
+                strcpy (inputFileName, optarg);
                 is_file = 1;
                 break;
             default:
