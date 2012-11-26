@@ -29,10 +29,14 @@
 /* maximum match length not encoded and maximum length encoded (4 bits) */
 #define MAX_UNCODED     2
 #define MAX_CODED       ((1 << LENGTH_BITS) + MAX_UNCODED)
-#define ENCODED     0       /* encoded string */
-#define UNCODED     1       /* unencoded character */
+#define ENCODED         0       /* encoded string */
+#define UNCODED         1       /* unencoded character */
 #define Wrap(value, limit)      (((value) < (limit)) ? (value) : ((value) - (limit)))
 
+//kernel launch related defines
+#define MAX_BYTES_PER_THREAD    WINDOW_SIZE
+#define MAX_THREADS_PER_BLOCK   5 
+#define MAX_BYTES_PER_BLOCK     (MAX_BYTES_PER_TRHEAD * MAX_THREADS_PER_BLOCK) 
 const char *outFile = "./myout.txt" ; //Path for writing compressed output buffer to a file
 
 typedef enum
@@ -623,7 +627,10 @@ void encode(char *input, int length, char *output)
     int *output_length_d;
     int output_length;
 
-
+    int numBlocksToLaunch;
+    int numThreadsToLaunch;
+    int numThreadsInLastBlock;
+    int bytesInLastBlock;
     /***************************************************
       1st Part: Allocation of memory on device memory  
      ****************************************************/
@@ -643,13 +650,21 @@ void encode(char *input, int length, char *output)
     cudaMalloc((void**) &output_d, size);
     /*allocate memory for compressed output on device */
     cudaMalloc((void**) &output_length_d, sizeof(int));
-
-
-
+    
+   
     /***************************************************
       2nd Part: Inovke kernel 
      ****************************************************/
-    EncodeLZSSByArray<<<1,1>>>(input_d,length,output_d,output_length_d);
+    bytesInLastBlock = length % MAX_BYTES_PER_BLOCK;
+    numBlocksToLaunch = (length / MAX_BYTES_PER_BLOCK) + (!!(bytesInLastBlock));
+    numThreadsInLastBlock = (bytesInLastBlock / MAX_BYTES_PER_THREAD) + (!!(bytesInLastBlock % MAX_BYTES_PER_THREAD));
+    numThreadsToLaunch = 5
+    if (numBlocksToLaunch <= 0) {
+        printf("Error in calculating numBlocksToLaunch.");
+        exit(-1);
+    }
+
+    EncodeLZSSByArray<<<numBlocksToLaunch, numThreadsToLaunch>>>(input_d,length,output_d,output_length_d);
 
     /***************************************************
       3rd Part: Transfer result from device to host 
