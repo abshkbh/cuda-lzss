@@ -56,7 +56,6 @@ int main(int argc, char **argv) {
     char inputFileName[64];
     int inputSize = 0;
     char *inputArr;
-    int i;
 
     char input[] ="This is him he";
     int input_len = strlen(input);
@@ -69,6 +68,7 @@ int main(int argc, char **argv) {
     encode(inputArr,inputSize,output);
     printf("After encoding\n");
 
+    free(inputArr);
     //We should have compressed output in outptu buffer now
     return 0;
 
