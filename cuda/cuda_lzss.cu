@@ -34,9 +34,11 @@
 #define Wrap(value, limit)      (((value) < (limit)) ? (value) : ((value) - (limit)))
 
 //kernel launch related defines
-#define MAX_BYTES_PER_THREAD    WINDOW_SIZE
-#define MAX_THREADS_PER_BLOCK   5 
-#define MAX_BYTES_PER_BLOCK     (MAX_BYTES_PER_TRHEAD * MAX_THREADS_PER_BLOCK) 
+#define MAX_THREADS_PER_BLOCK   32 
+#define MAX_BYTES_PER_BLOCK     24576 //24KB, half of max shared memory per block
+#define MAX_BYTES_PER_THREAD    (MAX_BYTES_PER_BLOCK / MAX_THREADS_PER_BLOCK)
+
+
 const char *outFile = "./myout.txt" ; //Path for writing compressed output buffer to a file
 
 typedef enum
@@ -495,126 +497,134 @@ __global__
     void 
 EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 {
+    __shared__ char sInput[MAX_BYTES_PER_BLOCK];
+    int count ;
+    bit_file_t *bfpOut;
+    encoded_string_t matchData;
+    unsigned int i, c;
+    unsigned int len;                       /* length of string */
+    /* head of sliding window and lookahead */
+    unsigned int windowHead, uncodedHead;
+    char *perThreadInput; 
+    int perThreadInputLen;
+    // copy input array into shared memory
+    int tidWithBlock = threadIdx.x + blockIdx.x * MAX_THREADS_PER_BLOCK;
+    
+    // TODO: can optimize
+    for(i=0; i < MAX_BYTES_PER_THREAD; i++) {
+        sInput[threadIdx.x] =
+            (tidWithBlock < input_len) ? input[tidWithBlock + i] : 0; 
+    }
+    perThreadInput = sInput + ((threadIdx.x) * MAX_BYTES_PER_THREAD);
+    perThreadInputLen = MAX_THREADS_PER_BLOCK;
+    perThreadOutput = output + (tidWithBlock * MAX_BYTES_PER_THREAD);
 
-    if (threadIdx.x == 0) {
-        int count ;
-        //	    int input_len = strlen((char *)input);
-        bit_file_t *bfpOut;
+    windowHead = 0;
+    uncodedHead = 0;
 
-        encoded_string_t matchData;
-        unsigned int i, c;
-        unsigned int len;                       /* length of string */
+    /* Window Size : 2^12 same as offset  */
+    /************************************************************************
+     * Fill the sliding window buffer with some known vales.  DecodeLZSS must
+     * use the same values.  If common characters are used, there's an
+     * increased chance of matching to the earlier strings.
+     ************************************************************************/
+    memset(slidingWindow, ' ', WINDOW_SIZE * sizeof(unsigned char));
 
-        /* head of sliding window and lookahead */
-        unsigned int windowHead, uncodedHead;
+    bfpOut = BitStreamOpen((unsigned char *)perThreadOutput);
 
+    count = 0;
+    /* MAX_CODED : 2 to 17 because we cant have 0 to 1 */
+    /************************************************************************
+     * Copy MAX_CODED bytes from the input file into the uncoded lookahead
+     * buffer.
+     ************************************************************************/
+    for (len = 0; len < MAX_CODED && (count < perThreadInputLen); len++)
+    {
+        c = perThreadInput[count];
+        uncodedLookahead[len] = c;
+        count++;
+    }
 
-        windowHead = 0;
-        uncodedHead = 0;
+    if (len == 0)
+    {
+        //return (EXIT_SUCCESS);   /* inFile was empty */
+        return;
+    }
 
-        /* Window Size : 2^12 same as offset  */
-        /************************************************************************
-         * Fill the sliding window buffer with some known vales.  DecodeLZSS must
-         * use the same values.  If common characters are used, there's an
-         * increased chance of matching to the earlier strings.
-         ************************************************************************/
-        memset(slidingWindow, ' ', WINDOW_SIZE * sizeof(unsigned char));
+    /* Look for matching string in sliding window */
+    /*    InitializeSearchStructures(); Not needed for bruteforce */
+    matchData = FindMatch(windowHead, uncodedHead);
 
-        bfpOut = BitStreamOpen((unsigned char *)output);
-
-        count = 0;
-        /* MAX_CODED : 2 to 17 because we cant have 0 to 1 */
-        /************************************************************************
-         * Copy MAX_CODED bytes from the input file into the uncoded lookahead
-         * buffer.
-         ************************************************************************/
-        for (len = 0; len < MAX_CODED && (count < input_len); len++)
+    /* now encoded the rest of the file until an EOF is read */
+    while (len > 0)
+    {
+        if (matchData.length > len)
         {
-            c = input[count];
-            uncodedLookahead[len] = c;
+            /* garbage beyond last data happened to extend match length */
+            matchData.length = len;
+        }
+
+        if (matchData.length <= MAX_UNCODED)
+        {
+            /* not long enough match.  write uncoded flag and character */
+            BitFilePutBit(UNCODED, bfpOut);
+            BitFilePutChar(uncodedLookahead[uncodedHead], bfpOut);
+
+            matchData.length = 1;   /* set to 1 for 1 byte uncoded */
+        }
+        else
+        {
+            unsigned int adjustedLen;
+
+            /* adjust the length of the match so minimun encoded len is 0*/
+            adjustedLen = matchData.length - (MAX_UNCODED + 1);
+
+            /* match length > MAX_UNCODED.  Encode as offset and length. */
+            BitFilePutBit(ENCODED, bfpOut);
+            BitFilePutBitsInt(bfpOut, &matchData.offset, OFFSET_BITS,
+                    sizeof(unsigned int));
+            BitFilePutBitsInt(bfpOut, &adjustedLen, LENGTH_BITS,
+                    sizeof(unsigned int));
+        }
+
+        /********************************************************************
+         * Replace the matchData.length worth of bytes we've matched in the
+         * sliding window with new bytes from the input file.
+         ********************************************************************/
+        i = 0;
+        while ((i < matchData.length) && (count < (perThreadInputLen + 1)))
+        {
+            c = perThreadInput[count];
+            /* add old byte into sliding window and new into lookahead */
+            ReplaceChar(windowHead, uncodedLookahead[uncodedHead]);
+            uncodedLookahead[uncodedHead] = c;
+            windowHead = Wrap((windowHead + 1), WINDOW_SIZE);
+            uncodedHead = Wrap((uncodedHead + 1), MAX_CODED);
+            i++;
             count++;
         }
 
-        if (len == 0)
+        /* handle case where we hit EOF before filling lookahead */
+        while (i < matchData.length)
         {
-            //return (EXIT_SUCCESS);   /* inFile was empty */
-            return;
+            ReplaceChar(windowHead, uncodedLookahead[uncodedHead]);
+            /* nothing to add to lookahead here */
+            windowHead = Wrap((windowHead + 1), WINDOW_SIZE);
+            uncodedHead = Wrap((uncodedHead + 1), MAX_CODED);
+            len--;
+            i++;
         }
 
-        /* Look for matching string in sliding window */
-        /*    InitializeSearchStructures(); Not needed for bruteforce */
+        /* find match for the remaining characters */
         matchData = FindMatch(windowHead, uncodedHead);
-
-        /* now encoded the rest of the file until an EOF is read */
-        while (len > 0)
-        {
-            if (matchData.length > len)
-            {
-                /* garbage beyond last data happened to extend match length */
-                matchData.length = len;
-            }
-
-            if (matchData.length <= MAX_UNCODED)
-            {
-                /* not long enough match.  write uncoded flag and character */
-                BitFilePutBit(UNCODED, bfpOut);
-                BitFilePutChar(uncodedLookahead[uncodedHead], bfpOut);
-
-                matchData.length = 1;   /* set to 1 for 1 byte uncoded */
-            }
-            else
-            {
-                unsigned int adjustedLen;
-
-                /* adjust the length of the match so minimun encoded len is 0*/
-                adjustedLen = matchData.length - (MAX_UNCODED + 1);
-
-                /* match length > MAX_UNCODED.  Encode as offset and length. */
-                BitFilePutBit(ENCODED, bfpOut);
-                BitFilePutBitsInt(bfpOut, &matchData.offset, OFFSET_BITS,
-                        sizeof(unsigned int));
-                BitFilePutBitsInt(bfpOut, &adjustedLen, LENGTH_BITS,
-                        sizeof(unsigned int));
-            }
-
-            /********************************************************************
-             * Replace the matchData.length worth of bytes we've matched in the
-             * sliding window with new bytes from the input file.
-             ********************************************************************/
-            i = 0;
-            while ((i < matchData.length) && (count < (input_len + 1)))
-            {
-                c = input[count];
-                /* add old byte into sliding window and new into lookahead */
-                ReplaceChar(windowHead, uncodedLookahead[uncodedHead]);
-                uncodedLookahead[uncodedHead] = c;
-                windowHead = Wrap((windowHead + 1), WINDOW_SIZE);
-                uncodedHead = Wrap((uncodedHead + 1), MAX_CODED);
-                i++;
-                count++;
-            }
-
-            /* handle case where we hit EOF before filling lookahead */
-            while (i < matchData.length)
-            {
-                ReplaceChar(windowHead, uncodedLookahead[uncodedHead]);
-                /* nothing to add to lookahead here */
-                windowHead = Wrap((windowHead + 1), WINDOW_SIZE);
-                uncodedHead = Wrap((uncodedHead + 1), MAX_CODED);
-                len--;
-                i++;
-            }
-
-            /* find match for the remaining characters */
-            matchData = FindMatch(windowHead, uncodedHead);
-        }
-
-        printf("Before writing to file\n");
-
-        *output_length = bfpOut->outBytes;
-        FreeBitStream(bfpOut);
-
     }
+
+    printf("Before writing to file\n");
+
+    // TODO: Change this to work with multithread
+    *output_length = bfpOut->outBytes;
+    FreeBitStream(bfpOut);
+
 
 }
 
@@ -658,7 +668,7 @@ void encode(char *input, int length, char *output)
     bytesInLastBlock = length % MAX_BYTES_PER_BLOCK;
     numBlocksToLaunch = (length / MAX_BYTES_PER_BLOCK) + (!!(bytesInLastBlock));
     numThreadsInLastBlock = (bytesInLastBlock / MAX_BYTES_PER_THREAD) + (!!(bytesInLastBlock % MAX_BYTES_PER_THREAD));
-    numThreadsToLaunch = 5
+    numThreadsToLaunch = MAX_BYTES_PER_THREAD;
     if (numBlocksToLaunch <= 0) {
         printf("Error in calculating numBlocksToLaunch.");
         exit(-1);
