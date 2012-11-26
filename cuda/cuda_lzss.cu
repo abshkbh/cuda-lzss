@@ -639,22 +639,17 @@ void encode(char *input, int length, char *output)
     /* copy input matrix */
     cudaMalloc((void**) &input_d, size);
     cudaMemcpy(input_d, input, size, cudaMemcpyHostToDevice);
-
     /*allocate memory for compressed output on device */
     cudaMalloc((void**) &output_d, size);
-
-
     /*allocate memory for compressed output on device */
     cudaMalloc((void**) &output_length_d, sizeof(int));
 
 
-    /*******************************************************/
 
     /***************************************************
       2nd Part: Inovke kernel 
      ****************************************************/
     EncodeLZSSByArray<<<1,1>>>(input_d,length,output_d,output_length_d);
-    /***********************************************************/
 
     /***************************************************
       3rd Part: Transfer result from device to host 
