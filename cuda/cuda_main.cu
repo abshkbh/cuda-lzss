@@ -60,13 +60,13 @@ int main(int argc, char **argv) {
 
     char input[] ="This is him he";
     int input_len = strlen(input);
-    char *output = (char *)malloc(sizeof(char) * (input_len + 1));
 
     parseArguement(argc, argv, inputFileName);
     readFile(inputFileName, &inputSize, &inputArr);
+    char *output = (char *)malloc(sizeof(char) * (inputSize + 1));
 
     printf("Before encoding\n");
-    encode(input,input_len,output);
+    encode(inputArr,inputSize,output);
     printf("After encoding\n");
 
     //We should have compressed output in outptu buffer now
