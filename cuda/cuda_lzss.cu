@@ -482,6 +482,24 @@ void printBufferStream(char *buffer,int length) {
     fclose(fp);
 }
 
+
+static 
+void format_output(char *output,char *input, int total_len) {
+
+int i;
+int len ;
+int offset = 0;
+for(i = 0 ; i < TOTAL_THREADS ; i++) {
+len = strlen(input[i * MAX_BYTES_PER_THREAD]);
+strncpy(output + offset , input + i * MAX_BYTES_PER_THREAD , len);
+offset += len;
+}
+
+output[offset] = 0; //Adding null
+
+}
+
+
 /* Printing our output buffer */
 __device__ inline static 
 void putInBufferStream(unsigned char c,bit_file_t * stream) {
@@ -513,7 +531,7 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
     // TODO: can optimize
     for(i=0; i < MAX_BYTES_PER_THREAD; i++) {
         sInput[threadIdx.x] =
-            (tidWithBlock < input_len) ? input[tidWithBlock + i] : 0; 
+            (tidWithBlock < input_len) ? input[tidWithBlock*MAX_BYTES_PER_THREAD + i] : 0; 
     }
     perThreadInput = sInput + ((threadIdx.x) * MAX_BYTES_PER_THREAD);
     perThreadInputLen = MAX_THREADS_PER_BLOCK;
@@ -623,6 +641,7 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 
     // TODO: Change this to work with multithread
     *output_length = bfpOut->outBytes;
+    output[*output_length] = 0; //Each thread appends null when its done
     FreeBitStream(bfpOut);
 
 
@@ -636,6 +655,7 @@ void encode(char *input, int length, char *output)
     char *output_d;
     int *output_length_d;
     int output_length;
+    char *final_output;
 
     int numBlocksToLaunch;
     int numThreadsToLaunch;
@@ -646,6 +666,8 @@ void encode(char *input, int length, char *output)
      ****************************************************/
     unsigned char *slide;
     unsigned char *uncoded;
+    
+    final_output = (char *)malloc(length * sizeof(unsigned char));
 
     cudaMalloc(&slide, WINDOW_SIZE * sizeof(unsigned char));
     cudaMemcpyToSymbol(slidingWindow, &slide , sizeof(slide));
@@ -668,7 +690,7 @@ void encode(char *input, int length, char *output)
     bytesInLastBlock = length % MAX_BYTES_PER_BLOCK;
     numBlocksToLaunch = (length / MAX_BYTES_PER_BLOCK) + (!!(bytesInLastBlock));
     numThreadsInLastBlock = (bytesInLastBlock / MAX_BYTES_PER_THREAD) + (!!(bytesInLastBlock % MAX_BYTES_PER_THREAD));
-    numThreadsToLaunch = MAX_BYTES_PER_THREAD;
+    numThreadsToLaunch = MAX_THREADS_PER_BLOCK;
     if (numBlocksToLaunch <= 0) {
         printf("Error in calculating numBlocksToLaunch.");
         exit(-1);
@@ -681,7 +703,13 @@ void encode(char *input, int length, char *output)
      ****************************************************/
     cudaMemcpy(output, output_d, size, cudaMemcpyDeviceToHost);
     cudaMemcpy(&output_length, output_length_d, sizeof(int), cudaMemcpyDeviceToHost);
-    printBufferStream(output,output_length);
+
+    //We need to format output as each thread appends null after its compressed
+    //string
+    format_string(final_output , output);
+    // printBufferStream(output,output_length);
+    printBufferStream(final_output,strlen(final_output));
+    free(final_output);
     cudaFree(input_d);
     cudaFree(output_d);
     cudaFree(output_length_d);
