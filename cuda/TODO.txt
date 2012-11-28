@@ -12,6 +12,10 @@ in our source code files.
    other bug, at least very first part (processed by thread 0) of the data should be 
    identical to original text file.
 
+2. Seems like it segfaults inside the kernel. This bug might existed when we
+   were using sigle thread in CUDA (we never had error checking and syncing after the
+   kenel call before). I suspect that this is related to the bug that misses
+   last character of the file. Abhishek can take a look at this.
 
 
 Tools that might help debugging.
