@@ -484,19 +484,17 @@ void printBufferStream(char *buffer,int length) {
 
 
 static 
-void format_output(char *output,char *input, int total_len) {
+void format_output(char *output,char *input, int numWorkingThreads) {
 
-int i;
-int len ;
-int offset = 0;
-for(i = 0 ; i < TOTAL_THREADS ; i++) {
-len = strlen(input[i * MAX_BYTES_PER_THREAD]);
-strncpy(output + offset , input + i * MAX_BYTES_PER_THREAD , len);
-offset += len;
-}
-
-output[offset] = 0; //Adding null
-
+    int i;
+    int len ;
+    int offset = 0;
+    for(i = 0 ; i < numWorkingThreads ; i++) {
+        len = strlen(input + (i * MAX_BYTES_PER_THREAD));
+        strncpy(output + offset , input + i * MAX_BYTES_PER_THREAD , len);
+        offset += len;
+    }
+    output[offset] = '\0'; //Adding null character
 }
 
 
@@ -525,13 +523,16 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
     unsigned int windowHead, uncodedHead;
     char *perThreadInput; 
     int perThreadInputLen;
+    char *perThreadOutput;
     // copy input array into shared memory
     int tidWithBlock = threadIdx.x + blockIdx.x * MAX_THREADS_PER_BLOCK;
-    
+
     // TODO: can optimize
     for(i=0; i < MAX_BYTES_PER_THREAD; i++) {
+        // TODO: some of these calculation can be done outside of kernel.
         sInput[threadIdx.x] =
-            (tidWithBlock < input_len) ? input[tidWithBlock*MAX_BYTES_PER_THREAD + i] : 0; 
+            (tidWithBlock < (input_len / MAX_BYTES_PER_THREAD)) ? 
+            input[tidWithBlock * MAX_BYTES_PER_THREAD + i] : 0; 
     }
     perThreadInput = sInput + ((threadIdx.x) * MAX_BYTES_PER_THREAD);
     perThreadInputLen = MAX_THREADS_PER_BLOCK;
@@ -661,6 +662,8 @@ void encode(char *input, int length, char *output)
     int numThreadsToLaunch;
     int numThreadsInLastBlock;
     int bytesInLastBlock;
+    int numWorkingThreads;
+
     /***************************************************
       1st Part: Allocation of memory on device memory  
      ****************************************************/
@@ -688,15 +691,16 @@ void encode(char *input, int length, char *output)
       2nd Part: Inovke kernel 
      ****************************************************/
     bytesInLastBlock = length % MAX_BYTES_PER_BLOCK;
+    numWorkingThreads = length / MAX_BYTES_PER_THREAD + !!(length % MAX_BYTES_PER_THREAD);
     numBlocksToLaunch = (length / MAX_BYTES_PER_BLOCK) + (!!(bytesInLastBlock));
     numThreadsInLastBlock = (bytesInLastBlock / MAX_BYTES_PER_THREAD) + (!!(bytesInLastBlock % MAX_BYTES_PER_THREAD));
-    numThreadsToLaunch = MAX_THREADS_PER_BLOCK;
+    
     if (numBlocksToLaunch <= 0) {
         printf("Error in calculating numBlocksToLaunch.");
         exit(-1);
     }
 
-    EncodeLZSSByArray<<<numBlocksToLaunch, numThreadsToLaunch>>>(input_d,length,output_d,output_length_d);
+    EncodeLZSSByArray<<<numBlocksToLaunch, MAX_THREADS_PER_BLOCK>>>(input_d,length,output_d,output_length_d);
 
     /***************************************************
       3rd Part: Transfer result from device to host 
@@ -706,9 +710,9 @@ void encode(char *input, int length, char *output)
 
     //We need to format output as each thread appends null after its compressed
     //string
-    format_string(final_output , output);
+    format_output(final_output , output, numWorkingThreads);
     // printBufferStream(output,output_length);
-    printBufferStream(final_output,strlen(final_output));
+    printBufferStream(final_output, strlen(final_output));
     free(final_output);
     cudaFree(input_d);
     cudaFree(output_d);
