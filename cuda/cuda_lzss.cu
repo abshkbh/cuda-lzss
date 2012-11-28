@@ -524,20 +524,28 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
     char *perThreadInput; 
     int perThreadInputLen;
     char *perThreadOutput;
+
     // copy input array into shared memory
     int tidWithBlock = threadIdx.x + blockIdx.x * MAX_THREADS_PER_BLOCK;
 
     // TODO: can optimize
     for(i=0; i < MAX_BYTES_PER_THREAD; i++) {
         // TODO: some of these calculation can be done outside of kernel.
-        sInput[threadIdx.x] =
+        sInput[threadIdx.x + i] =
             (tidWithBlock < (input_len / MAX_BYTES_PER_THREAD)) ? 
-            input[tidWithBlock * MAX_BYTES_PER_THREAD + i] : 0; 
-    }
+            input[tidWithBlock * MAX_BYTES_PER_THREAD + i] : 0;
+           }
+    __syncthreads();
+    // TODO: Should this len be different for the last thread?
+    perThreadInputLen = MAX_BYTES_PER_THREAD;
     perThreadInput = sInput + ((threadIdx.x) * MAX_BYTES_PER_THREAD);
-    perThreadInputLen = MAX_THREADS_PER_BLOCK;
     perThreadOutput = output + (tidWithBlock * MAX_BYTES_PER_THREAD);
-
+    //if (blockIdx.x == 0 && threadIdx.x==0) {
+    //    printf("\n");
+    //    for(int j = 0; j<32; j++)
+    //        printf("%c", perThreadInput[j]);
+    //    printf("\n");
+    //}
     windowHead = 0;
     uncodedHead = 0;
 
@@ -638,7 +646,7 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
         matchData = FindMatch(windowHead, uncodedHead);
     }
 
-    printf("Before writing to file\n");
+    //printf("Before writing to file\n");
 
     // TODO: Change this to work with multithread
     *output_length = bfpOut->outBytes;
@@ -693,15 +701,20 @@ void encode(char *input, int length, char *output)
     bytesInLastBlock = length % MAX_BYTES_PER_BLOCK;
     numWorkingThreads = length / MAX_BYTES_PER_THREAD + !!(length % MAX_BYTES_PER_THREAD);
     numBlocksToLaunch = (length / MAX_BYTES_PER_BLOCK) + (!!(bytesInLastBlock));
-    numThreadsInLastBlock = (bytesInLastBlock / MAX_BYTES_PER_THREAD) + (!!(bytesInLastBlock % MAX_BYTES_PER_THREAD));
-    
+    numThreadsInLastBlock = (bytesInLastBlock / MAX_BYTES_PER_THREAD)
+                            + (!!(bytesInLastBlock % MAX_BYTES_PER_THREAD));
+
     if (numBlocksToLaunch <= 0) {
         printf("Error in calculating numBlocksToLaunch.");
         exit(-1);
     }
 
     EncodeLZSSByArray<<<numBlocksToLaunch, MAX_THREADS_PER_BLOCK>>>(input_d,length,output_d,output_length_d);
-
+    cudaThreadSynchronize();
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("CUDA Error: %s\n", cudaGetErrorString(err));
+    }
     /***************************************************
       3rd Part: Transfer result from device to host 
      ****************************************************/
