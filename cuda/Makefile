@@ -79,4 +79,4 @@ cuda_main: $(CUDA_C_OBJ) $(CUDA_CU_OBJ)
 
 #---------------------------------------------------------------------
 clean:
-	rm -rf *.o *.out cuda_main
+	rm -rf *.o *.out cuda_main output/my*

@@ -45,35 +45,35 @@
 #include <unistd.h>     /* getopt */
 #include <sys/stat.h>
 
+
 void encode(char *input, int length, char *output);
 int parseArguement(int argc, char **argv, char *inputFileName);
 int readFile(char *inputFileName, int *inputSize, char **inputArr);
 
+
 /*---< main() >-------------------------------------------------------------*/
 int main(int argc, char **argv) {
 
-    // Assuming user won't use file name longer than 64 char
+
     char inputFileName[64];
+//    char input[] ="Chan YO YO YO YO YO YO YO YO";
+//    int input_len = strlen(input);
     int inputSize = 0;
     char *inputArr;
+    char *output;
 
-    char input[] ="This is him he";
-    int input_len = strlen(input);
 
     parseArguement(argc, argv, inputFileName);
     readFile(inputFileName, &inputSize, &inputArr);
-    char *output = (char *)malloc(sizeof(char) * (inputSize + 1));
-
+    output = (char *)malloc(sizeof(char) * (inputSize + 1));
     printf("Before encoding\n");
     encode(inputArr,inputSize,output);
     printf("After encoding\n");
 
-    free(inputArr);
     //We should have compressed output in outptu buffer now
-    return 0;
+return 0;
 
 }
-
 
 int readFile(char *inputFileName, int *inputSize, char **inputArr ) {
     struct stat st;
@@ -96,7 +96,6 @@ int readFile(char *inputFileName, int *inputSize, char **inputArr ) {
         (*inputArr)[i] = c;
     } 
     (*inputArr)[i] = '\0';    
-
 
     return 0;
 }
@@ -122,3 +121,15 @@ int parseArguement(int argc, char **argv, char *inputFileName) {
     }
     return 1;
 }
+
+
+
+
+
+
+
+
+
+
+
+
