@@ -41,7 +41,7 @@ all: cuda
 
 DFLAGS      =
 OPTFLAGS    = -O3 -NDEBUG
-OPTFLAGS    =  -pg
+OPTFLAGS    =  
 INCFLAGS    = -I.
 CFLAGS      = $(OPTFLAGS) $(DFLAGS) $(INCFLAGS)
 NVCCFLAGS   = $(CFLAGS) --ptxas-options=-v -arch=sm_20

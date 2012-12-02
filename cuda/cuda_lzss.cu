@@ -35,7 +35,7 @@
 #define UNCODED     1       /* unencoded character */
 #define Wrap(value, limit)      (((value) < (limit)) ? (value) : ((value) - (limit)))
 
-#define MAX_THREADS_PER_BLOCK   32 
+#define MAX_THREADS_PER_BLOCK   48 
 #define MAX_BYTES_PER_THREAD    1024
 #define MAX_BYTES_PER_BLOCK     (MAX_THREADS_PER_BLOCK * MAX_BYTES_PER_THREAD) //24KB, half of max shared memory per block
 
@@ -405,8 +405,8 @@ void new_format_output(char *input,int *output_length, int totalThreads) {
 	char *ptr;
 	int limit = 0;
         FILE *fp = NULL;
-        char buf[20];
-        char out[20];
+        char buf[100];
+        char out[100];
 
 	for(i = 0 ; i < totalThreads ; i++) {
 		ptr = input + (i * MAX_BYTES_PER_THREAD);
@@ -416,7 +416,8 @@ void new_format_output(char *input,int *output_length, int totalThreads) {
 		strcat(out,buf);
 		if((fp = fopen(out,"wb")) == NULL) {
 			printf("Couldn't open file. Will not print buffer\n");
-		}     
+	                return;
+         	}     
 		else {   
 			limit = output_length[i];
 			//printf("Limit = %d for Thread = %d\n",limit,i);
@@ -424,9 +425,9 @@ void new_format_output(char *input,int *output_length, int totalThreads) {
 				fputc(ptr[j],fp);
 				j++;
 			}
+			fclose(fp);
 		}
 	}
-	fclose(fp);
 
 }
 
@@ -460,8 +461,9 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 	unsigned int len;                       /* length of string */
 	/* head of sliding window and lookahead */
 	unsigned int windowHead, uncodedHead;
-	unsigned char *slidingWindow = (unsigned char *)malloc(sizeof(unsigned char) * WINDOW_SIZE);   //SIZE WINDOW SIZE 
-	unsigned char *uncodedLookahead = (unsigned char *)malloc(sizeof(unsigned char) * MAX_CODED);  //SIZE MAX CODED
+
+	unsigned char slidingWindow[WINDOW_SIZE];   //SIZE WINDOW SIZE 
+	unsigned char uncodedLookahead[MAX_CODED];  //SIZE MAX CODED
 
 	// copy input array into shared memory
 	int tidWithBlock = threadIdx.x + blockIdx.x * MAX_THREADS_PER_BLOCK;
@@ -583,8 +585,6 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 	}
 
 	output_length[tidWithBlock] = bfpOut->outBytes;
-	free(slidingWindow);
-	free(uncodedLookahead);
 	FreeBitStream(bfpOut);
 
 
@@ -592,7 +592,7 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 
 void encode(char *input, int length, char *output)
 {
-        struct timeval time1,time2,time3,time4,diff;
+	struct timeval time1,time2,time3,time4,diff;
 	char *input_d;
 	int size = (length + 1) * sizeof(char); //strlen + 1 space for NULL
 	char *output_d;
@@ -601,8 +601,9 @@ void encode(char *input, int length, char *output)
 	char *finalOutput;
 	int numWorkingThreads = MAX_THREADS_PER_BLOCK;
 	int numBlocks = length / (MAX_THREADS_PER_BLOCK * MAX_BYTES_PER_THREAD);
+	printf("Numblocks = %d\n",numBlocks);
 	int totalThreads = numBlocks * numWorkingThreads;
-        gettimeofday(&time1,NULL);
+	gettimeofday(&time1,NULL);
 	/***************************************************
 	  1st Part: Allocation of memory on device memory  
 	 ****************************************************/
@@ -625,12 +626,12 @@ void encode(char *input, int length, char *output)
 	/*******************************************************/
 
 
-        gettimeofday(&time2,NULL);
+	gettimeofday(&time2,NULL);
 	/***************************************************
 	  2nd Part: Inovke kernel 
 	 ****************************************************/
 	EncodeLZSSByArray<<<numBlocks,numWorkingThreads>>>(input_d,length,output_d,output_length_d);
-        cudaThreadSynchronize();
+	cudaThreadSynchronize();
 	cudaError_t error = cudaGetLastError();
 	if (error != cudaSuccess){
 		printf("CUDA Error : %s\n",cudaGetErrorString(error));
