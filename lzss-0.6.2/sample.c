@@ -65,6 +65,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include "lzss.h"
 #include "optlist.h"
 
@@ -107,6 +108,7 @@ char *RemovePath(char *fullPath);
 ****************************************************************************/
 int main(int argc, char *argv[])
 {
+    struct timeval time1,time2,diff;
     option_t *optList, *thisOpt;
     FILE *fpIn, *fpOut;      /* pointer to open input & output files */
     MODES mode;
@@ -230,50 +232,54 @@ int main(int argc, char *argv[])
 
     /* we have valid parameters encode or decode */
     if (mode == ENCODE)
-    {
-        printf("Before encoding\n");
-        EncodeLZSSByFile(fpIn, fpOut);
+    {       gettimeofday(&time1,NULL);
+	    printf("Before encoding\n");
+	    EncodeLZSSByFile(fpIn, fpOut);
     }
     else
     {
-        DecodeLZSSByFile(fpIn, fpOut);
+	    DecodeLZSSByFile(fpIn, fpOut);
     }
 
     /* remember to close files */
     fclose(fpIn);
     fclose(fpOut);
+    gettimeofday(&time2,NULL);
+/*   timersub(&time2,&time1,&diff); */
+    printf("T1 is %lusec and %luusec\n",time1.tv_sec,time1.tv_usec);
+    printf("T2 is %lusec and %luusec\n",time2.tv_sec,time2.tv_usec);
     return EXIT_SUCCESS;
 }
 
 /***************************************************************************
-*   Function   : RemovePath
-*   Description: This is function accepts a pointer to the name of a file
-*                along with path information and returns a pointer to the
-*                character that is not part of the path.
-*   Parameters : fullPath - pointer to an array of characters containing
-*                           a file name and possible path modifiers.
-*   Effects    : None
-*   Returned   : Returns a pointer to the first character after any path
-*                information.
-***************************************************************************/
+ *   Function   : RemovePath
+ *   Description: This is function accepts a pointer to the name of a file
+ *                along with path information and returns a pointer to the
+ *                character that is not part of the path.
+ *   Parameters : fullPath - pointer to an array of characters containing
+ *                           a file name and possible path modifiers.
+ *   Effects    : None
+ *   Returned   : Returns a pointer to the first character after any path
+ *                information.
+ ***************************************************************************/
 char *RemovePath(char *fullPath)
 {
-    int i;
-    char *start, *tmp;                          /* start of file name */
-    const char delim[3] = {'\\', '/', ':'};     /* path deliminators */
+	int i;
+	char *start, *tmp;                          /* start of file name */
+	const char delim[3] = {'\\', '/', ':'};     /* path deliminators */
 
-    start = fullPath;
+	start = fullPath;
 
-    /* find the first character after all file path delimiters */
-    for (i = 0; i < 3; i++)
-    {
-        tmp = strrchr(start, delim[i]);
+	/* find the first character after all file path delimiters */
+	for (i = 0; i < 3; i++)
+	{
+		tmp = strrchr(start, delim[i]);
 
-        if (tmp != NULL)
-        {
-            start = tmp + 1;
-        }
-    }
+		if (tmp != NULL)
+		{
+			start = tmp + 1;
+		}
+	}
 
-    return start;
+	return start;
 }

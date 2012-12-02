@@ -19,6 +19,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <stdio.h>
+#include <sys/time.h>
+
 #define BLOCK_SIZE 16
 #define FALSE   0
 #define TRUE    1
@@ -417,10 +419,8 @@ void new_format_output(char *input,int *output_length, int totalThreads) {
 		}     
 		else {   
 			limit = output_length[i];
-			printf("Limit = %d for Thread = %d\n",limit,i);
+			//printf("Limit = %d for Thread = %d\n",limit,i);
 			while( j < limit ) {
-				//if(i == 0) fputc(ptr[j],fp1);
-				//	if (i == 1) fputc(ptr[j],fp2);
 				fputc(ptr[j],fp);
 				j++;
 			}
@@ -582,7 +582,6 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 		matchData = FindMatch(windowHead, uncodedHead,slidingWindow,uncodedLookahead);
 	}
 
-	printf("Before writing to file\n");
 	output_length[tidWithBlock] = bfpOut->outBytes;
 	free(slidingWindow);
 	free(uncodedLookahead);
@@ -593,7 +592,7 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 
 void encode(char *input, int length, char *output)
 {
-
+        struct timeval time1,time2,time3,time4,diff;
 	char *input_d;
 	int size = (length + 1) * sizeof(char); //strlen + 1 space for NULL
 	char *output_d;
@@ -603,6 +602,7 @@ void encode(char *input, int length, char *output)
 	int numWorkingThreads = MAX_THREADS_PER_BLOCK;
 	int numBlocks = length / (MAX_THREADS_PER_BLOCK * MAX_BYTES_PER_THREAD);
 	int totalThreads = numBlocks * numWorkingThreads;
+        gettimeofday(&time1,NULL);
 	/***************************************************
 	  1st Part: Allocation of memory on device memory  
 	 ****************************************************/
@@ -624,12 +624,19 @@ void encode(char *input, int length, char *output)
 
 	/*******************************************************/
 
+
+        gettimeofday(&time2,NULL);
 	/***************************************************
 	  2nd Part: Inovke kernel 
 	 ****************************************************/
 	EncodeLZSSByArray<<<numBlocks,numWorkingThreads>>>(input_d,length,output_d,output_length_d);
+        cudaThreadSynchronize();
+	cudaError_t error = cudaGetLastError();
+	if (error != cudaSuccess){
+		printf("CUDA Error : %s\n",cudaGetErrorString(error));
+	}	
 	/***********************************************************/
-
+	gettimeofday(&time3,NULL);
 	/***************************************************
 	  3rd Part: Transfer result from device to host 
 	 ****************************************************/
@@ -642,5 +649,10 @@ void encode(char *input, int length, char *output)
 	cudaFree(input_d);
 	cudaFree(output_d);
 	cudaFree(output_length_d);
+	gettimeofday(&time4,NULL);
+	timersub(&time3,&time2,&diff);
+	printf("Only Kernel Time is %lusec and %luusec\n",diff.tv_sec ,diff.tv_usec);
+	timersub(&time4,&time1,&diff);
+	printf("Total Time is %lusec and %luusec\n",diff.tv_sec ,diff.tv_usec);
 }  
 //} // namespace cuda
