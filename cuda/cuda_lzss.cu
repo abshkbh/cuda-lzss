@@ -35,8 +35,11 @@
 #define UNCODED     1       /* unencoded character */
 #define Wrap(value, limit)      (((value) < (limit)) ? (value) : ((value) - (limit)))
 
-#define MAX_THREADS_PER_BLOCK   48 
+#define MAX_THREADS_PER_BLOCK   48
+
+#define LOG_TWO_MAX_BYTES_PER_THREAD 10
 #define MAX_BYTES_PER_THREAD    1024
+
 #define MAX_BYTES_PER_BLOCK     (MAX_THREADS_PER_BLOCK * MAX_BYTES_PER_THREAD) //24KB, half of max shared memory per block
 
 
@@ -121,7 +124,7 @@ encoded_string_t FindMatch(unsigned int windowHead, unsigned int uncodedHead,uns
     matchData.offset = 0;
     i = windowHead;  /* start at the beginning of the sliding window */
     j = 0;
-
+#pragma unroll
     while (TRUE)
     {
         if (slidingWindow[i] == uncodedLookahead[uncodedHead])
@@ -145,21 +148,18 @@ encoded_string_t FindMatch(unsigned int windowHead, unsigned int uncodedHead,uns
                 matchData.offset = i;
             }
         }
-
-	if (j >= MAX_CODED)
-	{
-	    matchData.length = MAX_CODED;
-	    break;
-	}
-
-	i = Wrap((i + 1), WINDOW_SIZE);
-	if (i == windowHead)
-	{
-	    /* we wrapped around */
-	    break;
-	}
+        if (j >= MAX_CODED)
+        {
+            matchData.length = MAX_CODED;
+            break;
+        }
+        i = Wrap((i + 1), WINDOW_SIZE);
+        if (i == windowHead)
+        {
+            /* we wrapped around */
+            break;
+        }
     }
-
     return matchData;
 }
 
@@ -173,7 +173,7 @@ encoded_string_t FindMatch(unsigned int windowHead, unsigned int uncodedHead,uns
  *   Effects    : slidingWindow[charIndex] is replaced by replacement.
  *   Returned   : None
  ****************************************************************************/
-__device__ static 
+__device__ inline static 
 void ReplaceChar(unsigned int charIndex, unsigned char replacement,unsigned char *slidingWindow)
 {
     slidingWindow[charIndex] = replacement;
@@ -225,16 +225,15 @@ int BitFilePutChar(const int c, bit_file_t *stream)
 
     if (stream == NULL)
     {
-	return(EOF);
+        return(EOF);
     }
 
     if (stream->bitCount == 0)
     {
-
-	/* Printing to buffer */
-	//putInBuffer(c);
-	putInBufferStream(c,stream);
-	return c;
+        /* Printing to buffer */
+        //putInBuffer(c);
+        putInBufferStream(c,stream);
+        return c;
     }
 
     /* figure out what to write */
@@ -243,7 +242,7 @@ int BitFilePutChar(const int c, bit_file_t *stream)
 
 
     /* Printing to buffer */
-   // putInBuffer(tmp);
+    // putInBuffer(tmp);
     putInBufferStream(tmp,stream);
     /* We shud add stream->bitBuffer = c here */
     stream->bitBuffer = c;  /* VERY CAREFUL */
@@ -436,7 +435,7 @@ void new_format_output(char *input,int *output_length, int totalThreads) {
 
 
 /* Printing our output buffer */
-__device__ static 
+__device__  inline static 
 void putInBufferStream(unsigned char c,bit_file_t * stream) {
 	(stream->outBuffer)[stream->outBytes] = c;
 	stream->outBytes++;
@@ -462,26 +461,31 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 	unsigned int len;                       /* length of string */
 	/* head of sliding window and lookahead */
 	unsigned int windowHead, uncodedHead;
-
+    int startIndex;
 	unsigned char slidingWindow[WINDOW_SIZE];   //SIZE WINDOW SIZE 
 	unsigned char uncodedLookahead[MAX_CODED];  //SIZE MAX CODED
 
 	// copy input array into shared memory
-	int tidWithBlock = threadIdx.x + blockIdx.x * MAX_THREADS_PER_BLOCK;
+    int tid = threadIdx.x;
+	int tidWithBlock = tid + blockIdx.x * MAX_THREADS_PER_BLOCK;
+
+
+    // TODO: Should this len be different for the last thread?
+	perThreadInputLen = MAX_BYTES_PER_THREAD;
+	perThreadInput = sInput + (tid<<LOG_TWO_MAX_BYTES_PER_THREAD);
+    startIndex = tidWithBlock << LOG_TWO_MAX_BYTES_PER_THREAD;
+	perThreadOutput = output + (startIndex);
 
 	// TODO: can optimize
+    #pragma unroll 2
 	for(i=0; i < MAX_BYTES_PER_THREAD; i++) {
 		// TODO: some of these calculation can be done outside of kernel.
-		//		sInput[threadIdx.x*MAX_BYTES_PER_THREAD + i] =
+		//		sInput[tid*MAX_BYTES_PER_THREAD + i] =
 		//			(tidWithBlock < (input_len / MAX_BYTES_PER_THREAD)) ? 
 		//			input[tidWithBlock * MAX_BYTES_PER_THREAD + i] : 0;
-		sInput[threadIdx.x*MAX_BYTES_PER_THREAD + i] =	input[tidWithBlock * MAX_BYTES_PER_THREAD + i];
-	}
-	// TODO: Should this len be different for the last thread?
-	perThreadInputLen = MAX_BYTES_PER_THREAD;
-	perThreadInput = sInput + ((threadIdx.x) * MAX_BYTES_PER_THREAD);
-	perThreadOutput = output + (tidWithBlock * MAX_BYTES_PER_THREAD);
-
+		//sInput[tid<<LOG_TWO_MAX_BYTES_PER_THREAD + i] =	input[tidWithBlock<<LOG_TWO_MAX_BYTES_PER_THREAD + i];
+        perThreadInput[i] = input [startIndex + i];
+    }
 
 
 	windowHead = 0;
@@ -603,7 +607,7 @@ void encode(char *input, int length, char *output)
 	int *output_length;
 	char *finalOutput;
 	int numWorkingThreads = MAX_THREADS_PER_BLOCK;
-	int numBlocks = length / (MAX_THREADS_PER_BLOCK * MAX_BYTES_PER_THREAD);
+	int numBlocks = length / (MAX_THREADS_PER_BLOCK << LOG_TWO_MAX_BYTES_PER_THREAD);
 	printf("Numblocks = %d\n",numBlocks);
 	int totalThreads = numBlocks * numWorkingThreads;
 	gettimeofday(&time1,NULL);
