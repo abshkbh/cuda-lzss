@@ -35,8 +35,11 @@
 #define UNCODED     1       /* unencoded character */
 #define Wrap(value, limit)      (((value) < (limit)) ? (value) : ((value) - (limit)))
 
-#define MAX_THREADS_PER_BLOCK   48 
-#define MAX_BYTES_PER_THREAD    1024
+#define MAX_THREADS_PER_BLOCK   96
+
+#define LOG_TWO_MAX_BYTES_PER_THREAD 9
+#define MAX_BYTES_PER_THREAD    (1 << LOG_TWO_MAX_BYTES_PER_THREAD)
+
 #define MAX_BYTES_PER_BLOCK     (MAX_THREADS_PER_BLOCK * MAX_BYTES_PER_THREAD) //24KB, half of max shared memory per block
 
 
@@ -78,22 +81,22 @@ typedef union
 
 
 /* Prototypes */
-__device__ inline static void putInBufferStream(unsigned char c,bit_file_t * stream);
-__device__ inline static int BitFilePutBitsLE(bit_file_t *stream, void *bits, const unsigned int count);
+__device__ static void putInBufferStream(unsigned char c,bit_file_t * stream);
+__device__ static int BitFilePutBitsLE(bit_file_t *stream, void *bits, const unsigned int count);
 /* get/put character */
-__device__ inline static int BitFilePutChar(const int c, bit_file_t *stream);
+__device__ static int BitFilePutChar(const int c, bit_file_t *stream);
 
 /* get/put single bit */
-__device__ inline static int BitFilePutBit(const int c, bit_file_t *stream);
+__device__ static int BitFilePutBit(const int c, bit_file_t *stream);
 
 /* get/put number of bits (most significant bit to least significat bit) */
-__device__ inline static int BitFilePutBitsInt(bit_file_t *stream, void *bits, const unsigned int count,
+__device__ static int BitFilePutBitsInt(bit_file_t *stream, void *bits, const unsigned int count,
     const size_t size);
 
 
 
 static 
-void new_format_output(char *input,int *output_length, int totalThreads);
+void new_format_output(char *input,int *output_length, int totalThreads,unsigned long long original_length);
 
 /**************DEVICE HELPER FUNCTIONS ********************************/ 
 
@@ -111,8 +114,8 @@ void new_format_output(char *input,int *output_length, int totalThreads);
  *                length of the match.  If there is no match a length of
  *                zero will be returned.
  ****************************************************************************/
-__device__ inline static 
-                  encoded_string_t FindMatch(unsigned int windowHead, unsigned int uncodedHead,unsigned char *slidingWindow,unsigned char *uncodedLookahead)
+__device__ static 
+encoded_string_t FindMatch(unsigned int windowHead, unsigned int uncodedHead,unsigned char *slidingWindow,unsigned char *uncodedLookahead)
 {
     encoded_string_t matchData;
     unsigned int i, j;
@@ -121,45 +124,42 @@ __device__ inline static
     matchData.offset = 0;
     i = windowHead;  /* start at the beginning of the sliding window */
     j = 0;
-
+#pragma unroll
     while (TRUE)
     {
-	if (slidingWindow[i] == uncodedLookahead[uncodedHead])
-	{
-	    /* we matched one how many more match? */
-	    j = 1;
+        if (slidingWindow[i] == uncodedLookahead[uncodedHead])
+        {
+            /* we matched one how many more match? */
+            j = 1;
+            //#pragma unroll 4
+            while(slidingWindow[Wrap((i + j), WINDOW_SIZE)] ==
+                    uncodedLookahead[Wrap((uncodedHead + j), MAX_CODED)])
+            {
+                if (j >= MAX_CODED)
+                {
+                    break;
+                }
+                j++;
+            }
 
-	    while(slidingWindow[Wrap((i + j), WINDOW_SIZE)] ==
-		    uncodedLookahead[Wrap((uncodedHead + j), MAX_CODED)])
-	    {
-		if (j >= MAX_CODED)
-		{
-		    break;
-		}
-		j++;
-	    }
-
-	    if (j > matchData.length)
-	    {
-		matchData.length = j;
-		matchData.offset = i;
-	    }
-	}
-
-	if (j >= MAX_CODED)
-	{
-	    matchData.length = MAX_CODED;
-	    break;
-	}
-
-	i = Wrap((i + 1), WINDOW_SIZE);
-	if (i == windowHead)
-	{
-	    /* we wrapped around */
-	    break;
-	}
+            if (j > matchData.length)
+            {
+                matchData.length = j;
+                matchData.offset = i;
+            }
+        }
+        if (j >= MAX_CODED)
+        {
+            matchData.length = MAX_CODED;
+            break;
+        }
+        i = Wrap((i + 1), WINDOW_SIZE);
+        if (i == windowHead)
+        {
+            /* we wrapped around */
+            break;
+        }
     }
-
     return matchData;
 }
 
@@ -174,7 +174,7 @@ __device__ inline static
  *   Returned   : None
  ****************************************************************************/
 __device__ inline static 
-           void ReplaceChar(unsigned int charIndex, unsigned char replacement,unsigned char *slidingWindow)
+void ReplaceChar(unsigned int charIndex, unsigned char replacement,unsigned char *slidingWindow)
 {
     slidingWindow[charIndex] = replacement;
 }
@@ -184,8 +184,8 @@ __device__ inline static
 /**********BITFILE FUNCTIONS**********************/
 
 /* Opening BitStream */
-__device__ inline static 
-          bit_file_t *BitStreamOpen(unsigned char *buffer)
+__device__ static 
+bit_file_t *BitStreamOpen(unsigned char *buffer)
 {
     bit_file_t *bf;
 
@@ -193,15 +193,16 @@ __device__ inline static
 
     if (bf == NULL)
     {
-	/* malloc failed */
-//	errno = ENOMEM;  Need to set and handle this for CUDA
+        /* malloc failed */
+        //	errno = ENOMEM;  Need to set and handle this for CUDA
     }
     else
-    {       bf->outBuffer = buffer;
-	bf->outBytes = 0;
-	bf->bitBuffer = 0;
-	bf->bitCount = 0;
-	bf->endian = BF_LITTLE_ENDIAN;
+    {       
+        bf->outBuffer = buffer;
+        bf->outBytes = 0;
+        bf->bitBuffer = 0;
+        bf->bitCount = 0;
+        bf->endian = BF_LITTLE_ENDIAN;
     }
 
     return (bf);
@@ -217,23 +218,22 @@ __device__ inline static
  *   Effects    : Writes a byte to the file and updates buffer accordingly.
  *   Returned   : On success, the character written, otherwise EOF.
  ***************************************************************************/
-    __device__ inline static 
+    __device__ static 
 int BitFilePutChar(const int c, bit_file_t *stream)
 {
     unsigned char tmp;
 
     if (stream == NULL)
     {
-	return(EOF);
+        return(EOF);
     }
 
     if (stream->bitCount == 0)
     {
-
-	/* Printing to buffer */
-	//putInBuffer(c);
-	putInBufferStream(c,stream);
-	return c;
+        /* Printing to buffer */
+        //putInBuffer(c);
+        putInBufferStream(c,stream);
+        return c;
     }
 
     /* figure out what to write */
@@ -242,7 +242,7 @@ int BitFilePutChar(const int c, bit_file_t *stream)
 
 
     /* Printing to buffer */
-   // putInBuffer(tmp);
+    // putInBuffer(tmp);
     putInBufferStream(tmp,stream);
     /* We shud add stream->bitBuffer = c here */
     stream->bitBuffer = c;  /* VERY CAREFUL */
@@ -261,14 +261,14 @@ int BitFilePutChar(const int c, bit_file_t *stream)
  *                the buffer is written to the file and cleared.
  *   Returned   : On success, the bit value written, otherwise EOF.
  ***************************************************************************/
-    __device__ inline static 
+__device__ static 
 int BitFilePutBit(const int c, bit_file_t *stream)
 {
     int returnValue = c;
 
     if (stream == NULL)
     {
-	return(EOF);
+        return(EOF);
     }
 
     stream->bitCount++;
@@ -276,18 +276,18 @@ int BitFilePutBit(const int c, bit_file_t *stream)
 
     if (c != 0)
     {
-	stream->bitBuffer |= 1;
+        stream->bitBuffer |= 1;
     }
 
     /* write bit buffer if we have 8 bits */
     if (stream->bitCount == 8)
     {
-	/* Printing in buffer */
-	putInBufferStream(stream->bitBuffer,stream);
+        /* Printing in buffer */
+        putInBufferStream(stream->bitBuffer,stream);
 
-	/* reset buffer */
-	stream->bitCount = 0;
-	stream->bitBuffer = 0;
+        /* reset buffer */
+        stream->bitCount = 0;
+        stream->bitBuffer = 0;
     }
 
     return returnValue;
@@ -310,15 +310,15 @@ int BitFilePutBit(const int c, bit_file_t *stream)
  *                an error occurs after a partial write, the partially
  *                written bits will not be unwritten.
  ***************************************************************************/
-    __device__ inline static 
+__device__ static 
 int BitFilePutBitsInt(bit_file_t *stream, void *bits, const unsigned int count,
-	const size_t size)
+        const size_t size)
 {
     int returnValue;
 
     if ((stream == NULL) || (bits == NULL))
     {
-	return(EOF);
+        return(EOF);
     }
 
     /* For now we assume our system is LITTLE ENDIAN */
@@ -342,7 +342,7 @@ int BitFilePutBitsInt(bit_file_t *stream, void *bits, const unsigned int count,
  *                an error occurs after a partial write, the partially
  *                written bits will not be unwritten.
  ***************************************************************************/
-	__device__ inline static 
+__device__ static 
 int BitFilePutBitsLE(bit_file_t *stream, void *bits, const unsigned int count)
 {
 	unsigned char *bytes, tmp;
@@ -390,7 +390,7 @@ int BitFilePutBitsLE(bit_file_t *stream, void *bits, const unsigned int count)
 }
 
 /* Freeing Bit Stream */
-__device__ inline static 
+__device__ static 
 void FreeBitStream(bit_file_t *stream){
 	free(stream);
 }
@@ -398,7 +398,7 @@ void FreeBitStream(bit_file_t *stream){
 
 
 static 
-void new_format_output(char *input,int *output_length, int totalThreads) {
+void new_format_output(char *input,int *output_length, int totalThreads,unsigned long long original_length) {
 
 	int i;
 	int j;
@@ -407,7 +407,8 @@ void new_format_output(char *input,int *output_length, int totalThreads) {
         FILE *fp = NULL;
         char buf[100];
         char out[100];
-
+        unsigned long long compressed = 0;
+        float ratio = 0;
 	for(i = 0 ; i < totalThreads ; i++) {
 		ptr = input + (i * MAX_BYTES_PER_THREAD);
 		j = 0;
@@ -420,6 +421,7 @@ void new_format_output(char *input,int *output_length, int totalThreads) {
          	}     
 		else {   
 			limit = output_length[i];
+			compressed += output_length[i];
 			//printf("Limit = %d for Thread = %d\n",limit,i);
 			while( j < limit ) {
 				fputc(ptr[j],fp);
@@ -429,13 +431,17 @@ void new_format_output(char *input,int *output_length, int totalThreads) {
 		}
 	}
 
+        ratio = ((float)(original_length - compressed) * 100) / original_length;
+	printf("Total compressed output : %llu\n",compressed);
+	printf("Compression Ratio : %f\n",ratio);
+      
 }
 
 
 
 
 /* Printing our output buffer */
-__device__ inline static 
+__device__  inline static 
 void putInBufferStream(unsigned char c,bit_file_t * stream) {
 	(stream->outBuffer)[stream->outBytes] = c;
 	stream->outBytes++;
@@ -461,27 +467,31 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 	unsigned int len;                       /* length of string */
 	/* head of sliding window and lookahead */
 	unsigned int windowHead, uncodedHead;
-
+	int startIndex;
 	unsigned char slidingWindow[WINDOW_SIZE];   //SIZE WINDOW SIZE 
 	unsigned char uncodedLookahead[MAX_CODED];  //SIZE MAX CODED
 
 	// copy input array into shared memory
-	int tidWithBlock = threadIdx.x + blockIdx.x * MAX_THREADS_PER_BLOCK;
+	int tid = threadIdx.x;
+	int tidWithBlock = tid + blockIdx.x * MAX_THREADS_PER_BLOCK;
 
-	// TODO: can optimize
-	for(i=0; i < MAX_BYTES_PER_THREAD; i++) {
-		// TODO: some of these calculation can be done outside of kernel.
-		//		sInput[threadIdx.x*MAX_BYTES_PER_THREAD + i] =
-		//			(tidWithBlock < (input_len / MAX_BYTES_PER_THREAD)) ? 
-		//			input[tidWithBlock * MAX_BYTES_PER_THREAD + i] : 0;
-		sInput[threadIdx.x*MAX_BYTES_PER_THREAD + i] =	input[tidWithBlock * MAX_BYTES_PER_THREAD + i];
-	}
-	__syncthreads();
+
 	// TODO: Should this len be different for the last thread?
 	perThreadInputLen = MAX_BYTES_PER_THREAD;
-	perThreadInput = sInput + ((threadIdx.x) * MAX_BYTES_PER_THREAD);
-	perThreadOutput = output + (tidWithBlock * MAX_BYTES_PER_THREAD);
+	perThreadInput = sInput + (tid<<LOG_TWO_MAX_BYTES_PER_THREAD);
+	startIndex = tidWithBlock << LOG_TWO_MAX_BYTES_PER_THREAD;
+	perThreadOutput = output + (startIndex);
 
+	// TODO: can optimize
+#pragma unroll 2
+	for(i=0; i < MAX_BYTES_PER_THREAD; i++) {
+		// TODO: some of these calculation can be done outside of kernel.
+		//		sInput[tid*MAX_BYTES_PER_THREAD + i] =
+		//			(tidWithBlock < (input_len / MAX_BYTES_PER_THREAD)) ? 
+		//			input[tidWithBlock * MAX_BYTES_PER_THREAD + i] : 0;
+		//sInput[tid<<LOG_TWO_MAX_BYTES_PER_THREAD + i] =	input[tidWithBlock<<LOG_TWO_MAX_BYTES_PER_THREAD + i];
+		perThreadInput[i] = input [startIndex + i];
+	}
 
 
 	windowHead = 0;
@@ -503,6 +513,7 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 	 * Copy MAX_CODED bytes from the input file into the uncoded lookahead
 	 * buffer.
 	 ************************************************************************/
+#pragma unroll
 	for (len = 0; len < MAX_CODED && (count < perThreadInputLen); len++)
 	{
 		c = perThreadInput[count];
@@ -557,6 +568,7 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 		 * sliding window with new bytes from the input file.
 		 ********************************************************************/
 		i = 0;
+#pragma unroll
 		while ((i < matchData.length) && (count < perThreadInputLen))
 		{
 			c = perThreadInput[count];
@@ -570,6 +582,7 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 		}
 
 		/* handle case where we hit EOF before filling lookahead */
+#pragma unroll
 		while (i < matchData.length)
 		{
 			ReplaceChar(windowHead, uncodedLookahead[uncodedHead],slidingWindow);
@@ -592,15 +605,15 @@ EncodeLZSSByArray(char *input,int input_len,char *output,int *output_length)
 
 void encode(char *input, int length, char *output)
 {
-	struct timeval time1,time2,time3,time4,diff;
+	struct timeval time1,time2,time3,time4,time5,time6,diff;
 	char *input_d;
 	int size = (length + 1) * sizeof(char); //strlen + 1 space for NULL
 	char *output_d;
 	int *output_length_d;
 	int *output_length;
-	char *finalOutput;
+//	char *finalOutput;
 	int numWorkingThreads = MAX_THREADS_PER_BLOCK;
-	int numBlocks = length / (MAX_THREADS_PER_BLOCK * MAX_BYTES_PER_THREAD);
+	int numBlocks = length / (MAX_THREADS_PER_BLOCK << LOG_TWO_MAX_BYTES_PER_THREAD);
 	printf("Numblocks = %d\n",numBlocks);
 	int totalThreads = numBlocks * numWorkingThreads;
 	gettimeofday(&time1,NULL);
@@ -611,7 +624,12 @@ void encode(char *input, int length, char *output)
 
 	/* copy input matrix */
 	cudaMalloc((void**) &input_d, size);
+
+	gettimeofday(&time5,NULL);
 	cudaMemcpy(input_d, input, size, cudaMemcpyHostToDevice);
+	gettimeofday(&time6,NULL);
+	timersub(&time6,&time5,&diff);
+	printf("Time for CPU to GPU is %lusec and %luusec\n",diff.tv_sec ,diff.tv_usec);
 
 	/*allocate memory for compressed output on device */
 	cudaMalloc((void**) &output_d, size);
@@ -621,7 +639,7 @@ void encode(char *input, int length, char *output)
 	 *length */
 	cudaMalloc((void**) &output_length_d, sizeof(int) * totalThreads);
 
-	finalOutput = (char *)malloc(sizeof(char) * size);
+//	finalOutput = (char *)malloc(sizeof(char) * size);
 
 	/*******************************************************/
 
@@ -641,12 +659,17 @@ void encode(char *input, int length, char *output)
 	/***************************************************
 	  3rd Part: Transfer result from device to host 
 	 ****************************************************/
+	gettimeofday(&time5,NULL);
 	cudaMemcpy(output, output_d, size, cudaMemcpyDeviceToHost);
-	cudaMemcpy(output_length, output_length_d, sizeof(int) * totalThreads, cudaMemcpyDeviceToHost);
+	gettimeofday(&time6,NULL);
+	timersub(&time6,&time5,&diff);
+	printf("Time for GPU to CPU is %lusec and %luusec\n",diff.tv_sec ,diff.tv_usec);
+	
+        cudaMemcpy(output_length, output_length_d, sizeof(int) * totalThreads, cudaMemcpyDeviceToHost);
 
-	new_format_output(output,output_length,totalThreads);
+	new_format_output(output,output_length,totalThreads,length);
 
-	free(finalOutput);
+//	free(finalOutput);
 	cudaFree(input_d);
 	cudaFree(output_d);
 	cudaFree(output_length_d);
